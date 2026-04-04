@@ -178,6 +178,11 @@ export default function App() {
             </div>
           </div>
 
+          {/* Path block diagram */}
+          <div className="path-diagram-container">
+            <PathDiagram {...pathDiagramProps} />
+          </div>
+
           {/* Main visualization */}
           <div className="visualization">
             {viewMode === 'waveform' ? (
@@ -195,11 +200,6 @@ export default function App() {
                 isInputPath={isInputPath}
               />
             )}
-          </div>
-
-          {/* Path block diagram */}
-          <div className="path-diagram-container">
-            <PathDiagram {...pathDiagramProps} />
           </div>
         </main>
 
