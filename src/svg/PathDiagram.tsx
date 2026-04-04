@@ -12,15 +12,15 @@ interface Props {
 }
 
 const W = 800;
-const DATA_Y = 75;       // Y center for data path
-const CLK_Y = 155;       // Y center for clock path
+const DATA_Y = 45;       // Y center for data path
+const CLK_Y = 125;       // Y center for clock path
 const BOX_W = 120;
 const BOX_H = 45;
 
 export function PathDiagram({ isInputPath, tcoLabel, boardLabel, tco, boardDelay, topology, sourceSyncParams }: Props) {
   const isSourceSync = topology === 'source_sync';
   const showSourceSyncClk = isSourceSync;
-  const H = showSourceSyncClk ? 195 : 185;
+  const H = showSourceSyncClk ? 165 : 155;
 
   // Data path blocks
   const blocks = isInputPath
