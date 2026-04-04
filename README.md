@@ -1,4 +1,5 @@
 # FPGA Timing Constraint Simulator
+<img width="1882" height="774" alt="image" src="https://github.com/user-attachments/assets/20f13450-6800-49fa-8657-6855fdda079d" />
 
 An interactive browser-based tool for visualizing and generating FPGA I/O timing constraints (Xilinx XDC / SDC).
 
