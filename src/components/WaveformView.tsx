@@ -1,6 +1,6 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { WaveformRenderer } from '../canvas/WaveformRenderer.ts';
-import type { ClockParams, AnalysisResult, ClockTopology, SourceSyncParams } from '../types/timing.ts';
+import type { ClockParams, CaptureClockParams, AnalysisResult, ClockTopology, SourceSyncParams } from '../types/timing.ts';
 
 interface Props {
   clock: ClockParams;
@@ -8,18 +8,19 @@ interface Props {
   isInputPath: boolean;
   topology: ClockTopology;
   sourceSyncParams?: SourceSyncParams;
+  captureClock?: CaptureClockParams;
 }
 
-export function WaveformView({ clock, result, isInputPath, topology, sourceSyncParams }: Props) {
+export function WaveformView({ clock, result, isInputPath, topology, sourceSyncParams, captureClock }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<WaveformRenderer | null>(null);
-  const latestParamsRef = useRef({ clock, result, isInputPath, topology, sourceSyncParams });
+  const latestParamsRef = useRef({ clock, result, isInputPath, topology, sourceSyncParams, captureClock });
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1.0);
 
   useEffect(() => {
-    latestParamsRef.current = { clock, result, isInputPath, topology, sourceSyncParams };
-  }, [clock, result, isInputPath, topology, sourceSyncParams]);
+    latestParamsRef.current = { clock, result, isInputPath, topology, sourceSyncParams, captureClock };
+  }, [clock, result, isInputPath, topology, sourceSyncParams, captureClock]);
 
   // Init renderer
   useEffect(() => {
@@ -48,8 +49,8 @@ export function WaveformView({ clock, result, isInputPath, topology, sourceSyncP
 
   // Update params
   useEffect(() => {
-    rendererRef.current?.setParams({ clock, result, isInputPath, topology, sourceSyncParams });
-  }, [clock, result, isInputPath, topology, sourceSyncParams]);
+    rendererRef.current?.setParams({ clock, result, isInputPath, topology, sourceSyncParams, captureClock });
+  }, [clock, result, isInputPath, topology, sourceSyncParams, captureClock]);
 
   // Update speed
   useEffect(() => {

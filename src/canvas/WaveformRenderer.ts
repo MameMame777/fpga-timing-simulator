@@ -1,4 +1,4 @@
-import type { ClockParams, AnalysisResult, AnimationPhase, ClockTopology, SourceSyncParams } from '../types/timing.ts';
+import type { ClockParams, CaptureClockParams, AnalysisResult, AnimationPhase, ClockTopology, SourceSyncParams } from '../types/timing.ts';
 
 // Color palette (EDA dark theme style)
 const COLORS = {
@@ -26,6 +26,7 @@ interface RenderParams {
   isInputPath: boolean;
   topology: ClockTopology;
   sourceSyncParams?: SourceSyncParams;
+  captureClock?: CaptureClockParams;
 }
 
 export class WaveformRenderer {
@@ -42,9 +43,9 @@ export class WaveformRenderer {
   // Layout
   private readonly MARGIN_LEFT = 130;
   private readonly MARGIN_RIGHT = 40;
-  private readonly MARGIN_TOP = 50;
-  private readonly LANE_HEIGHT = 55;
-  private readonly LANE_GAP = 16;
+  private readonly MARGIN_TOP = 40;
+  private readonly LANE_HEIGHT = 48;
+  private readonly LANE_GAP = 12;
   private readonly CYCLE_DURATION_MS = 4000;
 
   constructor(canvas: HTMLCanvasElement, params: RenderParams) {
@@ -102,13 +103,21 @@ export class WaveformRenderer {
   resizeCanvas(): void {
     const dpr = window.devicePixelRatio || 1;
     const rect = this.canvas.getBoundingClientRect();
+    const neededHeight = this.computeHeight();
+    this.canvas.style.height = `${neededHeight}px`;
     this.canvas.width = rect.width * dpr;
-    this.canvas.height = rect.height * dpr;
+    this.canvas.height = neededHeight * dpr;
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.scale(dpr, dpr);
   }
 
   // --- Helpers ---
+
+  /** Compute the pixel height needed based on the number of lanes */
+  private computeHeight(): number {
+    const numLanes = this.showFwdClk ? 6 : 5;
+    return this.MARGIN_TOP + numLanes * this.LANE_HEIGHT + (numLanes - 1) * this.LANE_GAP + 22;
+  }
 
   /** Whether we show the forwarded clock lane */
   private get showFwdClk(): boolean {
@@ -231,24 +240,34 @@ export class WaveformRenderer {
     ctx.fillStyle = COLORS.text;
     ctx.font = '12px monospace';
     ctx.textAlign = 'right';
-    ctx.fillText(label, plotLeft - 10, y + this.LANE_HEIGHT / 2 + 4);
+    ctx.fillText(label, this.MARGIN_LEFT - 8, y + this.LANE_HEIGHT / 2 + 4);
 
     const result = this.params.result;
     const edgeCfg = result.edgeConfig;
     // Arrow direction: launch lane shows launch edge, capture lane shows capture edge
     const edgeDir = isLaunchClock ? edgeCfg.launchEdge : edgeCfg.captureEdge;
-    // Both clock lanes show the SAME physical clock; its state at plotLeft (=launchTime)
-    // is determined by the launch edge type.
-    const startsHigh = edgeCfg.launchEdge === 'falling';
+    // For the capture clock lane, use independent capture clock params if available.
+    const capClk = this.params.captureClock;
+    const useCapClk = !isLaunchClock && capClk;
 
-    const duty = this.params.clock.dutyCycle / 100;
-    const period = this.params.clock.period;
+    const duty = useCapClk ? capClk.dutyCycle / 100 : this.params.clock.dutyCycle / 100;
+    const period = useCapClk ? capClk.period : this.params.clock.period;
     const highTime = period * duty;
+    // Phase anchor:
+    // - Launch clock lane: launch edge is at window start (t=0)
+    // - Capture clock lane: capture edge is at window end (t=window)
+    const firstRising = isLaunchClock
+      ? (edgeCfg.launchEdge === 'rising' ? 0 : -(period - highTime))
+      : (edgeCfg.captureEdge === 'rising' ? window : window - highTime);
     const low = y + this.LANE_HEIGHT - 5;
     const high = y + 5;
     const color = isLaunchClock ? COLORS.clock : COLORS.captureMarker;
-    const preLevel = edgeCfg.launchEdge === 'rising' ? low : high;
-    const postLevel = edgeCfg.captureEdge === 'rising' ? high : low;
+    const isHighAt = (t: number): boolean => {
+      const phase = (((t - firstRising) % period) + period) % period;
+      return phase < highTime;
+    };
+    const preLevel = isHighAt(-1e-9) ? high : low;
+    const postLevel = isHighAt(window + 1e-9) ? high : low;
 
     // Extend clock illustration before launch and after capture.
     ctx.globalAlpha = 0.35;
@@ -266,7 +285,7 @@ export class WaveformRenderer {
     ctx.globalAlpha = 0.3;
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;
-    this.drawSquareWave(ctx, plotLeft, plotWidth, high, low, period, highTime, window, startsHigh);
+    this.drawSquareWave(ctx, plotLeft, plotWidth, high, low, period, highTime, window, firstRising);
     ctx.globalAlpha = 1.0;
 
     // Animate bright
@@ -278,7 +297,7 @@ export class WaveformRenderer {
       ctx.clip();
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
-      this.drawSquareWave(ctx, plotLeft, plotWidth, high, low, period, highTime, window, startsHigh);
+      this.drawSquareWave(ctx, plotLeft, plotWidth, high, low, period, highTime, window, firstRising);
       ctx.restore();
     }
 
@@ -331,58 +350,43 @@ export class WaveformRenderer {
   private drawSquareWave(
     ctx: CanvasRenderingContext2D, plotLeft: number, plotWidth: number,
     high: number, low: number, period: number, highTime: number, window: number,
-    startsHigh = false,
+    firstRising: number,
   ): void {
-    ctx.beginPath();
-    if (startsHigh) {
-      // Window starts at a falling edge: HIGH → LOW at plotLeft
-      ctx.moveTo(plotLeft, high);
-      ctx.lineTo(plotLeft, low);
-      const riseOffset = period - highTime; // ns until next rising edge
-      const riseNorm = riseOffset / window;
-      if (riseNorm < 1) {
-        const riseX = plotLeft + riseNorm * plotWidth;
-        ctx.lineTo(riseX, low);
-        ctx.lineTo(riseX, high);
-        const fallNorm = period / window; // ns until next falling edge
-        if (fallNorm < 1) {
-          const fallX = plotLeft + fallNorm * plotWidth;
-          ctx.lineTo(fallX, high);
-          ctx.lineTo(fallX, low);
-          ctx.lineTo(plotLeft + plotWidth, low);
-        } else {
-          ctx.lineTo(plotLeft + plotWidth, high);
-        }
-      } else {
-        // No rising edge within window (e.g. F→R: stay LOW, rise at captureX)
-        ctx.lineTo(plotLeft + plotWidth, low);
-        ctx.lineTo(plotLeft + plotWidth, high);
-      }
-    } else {
-      // Window starts at a rising edge: LOW → HIGH at plotLeft (original behavior)
-      ctx.moveTo(plotLeft, low);
-      ctx.lineTo(plotLeft, high);
-      const highEndNorm = highTime / window;
-      const highEnd = plotLeft + Math.min(highEndNorm, 1) * plotWidth;
-      ctx.lineTo(highEnd, high);
-      if (highEndNorm < 1) {
-        ctx.lineTo(highEnd, low);
-        const secondRise = period / window;
-        if (secondRise <= 1) {
-          const secondX = plotLeft + secondRise * plotWidth;
-          ctx.lineTo(secondX, low);
-          ctx.lineTo(secondX, high);
-          const secondHigh = plotLeft + Math.min((period + highTime) / window, 1) * plotWidth;
-          ctx.lineTo(secondHigh, high);
-          if ((period + highTime) / window < 1) {
-            ctx.lineTo(secondHigh, low);
-          }
-        }
-        ctx.lineTo(plotLeft + plotWidth, low);
-      } else {
-        ctx.lineTo(plotLeft + plotWidth, high);
+    const toX = (t: number) => plotLeft + (t / window) * plotWidth;
+    const isHighAt = (t: number): boolean => {
+      const phase = (((t - firstRising) % period) + period) % period;
+      return phase < highTime;
+    };
+
+    const transitions: number[] = [];
+    const kStart = Math.floor((0 - firstRising) / period) - 1;
+    const kEnd = Math.ceil((window - firstRising) / period) + 1;
+    for (let k = kStart; k <= kEnd; k++) {
+      const rise = firstRising + k * period;
+      const fall = rise + highTime;
+      if (rise >= -1e-9 && rise <= window + 1e-9) transitions.push(Math.max(0, Math.min(window, rise)));
+      if (fall >= -1e-9 && fall <= window + 1e-9) transitions.push(Math.max(0, Math.min(window, fall)));
+    }
+
+    transitions.sort((a, b) => a - b);
+    const uniqTransitions: number[] = [];
+    for (const t of transitions) {
+      if (uniqTransitions.length === 0 || Math.abs(t - uniqTransitions[uniqTransitions.length - 1]) > 1e-6) {
+        uniqTransitions.push(t);
       }
     }
+
+    let highState = isHighAt(-1e-9);
+    ctx.beginPath();
+    ctx.moveTo(plotLeft, highState ? high : low);
+
+    for (const t of uniqTransitions) {
+      const x = toX(t);
+      ctx.lineTo(x, highState ? high : low);
+      highState = !highState;
+      ctx.lineTo(x, highState ? high : low);
+    }
+    ctx.lineTo(plotLeft + plotWidth, highState ? high : low);
     ctx.stroke();
   }
 
@@ -396,7 +400,7 @@ export class WaveformRenderer {
     ctx.fillStyle = COLORS.text;
     ctx.font = '12px monospace';
     ctx.textAlign = 'right';
-    ctx.fillText('Fwd Clock', plotLeft - 10, y + this.LANE_HEIGHT / 2 + 4);
+    ctx.fillText('Fwd Clock', this.MARGIN_LEFT - 8, y + this.LANE_HEIGHT / 2 + 4);
 
     const ss = this.params.sourceSyncParams;
     if (!ss) return;
@@ -463,7 +467,7 @@ export class WaveformRenderer {
     ctx.fillStyle = COLORS.text;
     ctx.font = '12px monospace';
     ctx.textAlign = 'right';
-    ctx.fillText(label, plotLeft - 10, y + this.LANE_HEIGHT / 2 + 4);
+    ctx.fillText(label, this.MARGIN_LEFT - 8, y + this.LANE_HEIGHT / 2 + 4);
 
     const result = this.params.result;
     const mid = y + this.LANE_HEIGHT / 2;
@@ -530,7 +534,7 @@ export class WaveformRenderer {
     ctx.fillStyle = COLORS.text;
     ctx.font = '12px monospace';
     ctx.textAlign = 'right';
-    ctx.fillText(label, plotLeft - 10, y + this.LANE_HEIGHT / 2 + 4);
+    ctx.fillText(label, this.MARGIN_LEFT - 8, y + this.LANE_HEIGHT / 2 + 4);
 
     const result = this.params.result;
     const mid = y + this.LANE_HEIGHT / 2;
@@ -655,7 +659,7 @@ export class WaveformRenderer {
     ctx.fillStyle = COLORS.text;
     ctx.font = '12px monospace';
     ctx.textAlign = 'right';
-    ctx.fillText('Verdict', plotLeft - 10, y + this.LANE_HEIGHT / 2 + 4);
+    ctx.fillText('Verdict', this.MARGIN_LEFT - 8, y + this.LANE_HEIGHT / 2 + 4);
 
     if (this.currentPhase !== 'result') return;
 

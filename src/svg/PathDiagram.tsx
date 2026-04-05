@@ -7,6 +7,7 @@ interface Props {
   boardLabel: string;  // e.g., "Board delay"
   tco: number;
   boardDelay: number;
+  routingDelay: number;
   topology: ClockTopology;
   sourceSyncParams?: SourceSyncParams;
 }
@@ -17,7 +18,7 @@ const CLK_Y = 125;       // Y center for clock path
 const BOX_W = 120;
 const BOX_H = 45;
 
-export function PathDiagram({ isInputPath, tcoLabel, boardLabel, tco, boardDelay, topology, sourceSyncParams }: Props) {
+export function PathDiagram({ isInputPath, tcoLabel, boardLabel, tco, boardDelay, routingDelay, topology, sourceSyncParams }: Props) {
   const isSourceSync = topology === 'source_sync';
   const showSourceSyncClk = isSourceSync;
   const H = showSourceSyncClk ? 165 : 155;
@@ -41,11 +42,11 @@ export function PathDiagram({ isInputPath, tcoLabel, boardLabel, tco, boardDelay
     ? [
         { label: tcoLabel, value: tco },
         { label: 'Board', value: boardDelay },
-        { label: 'Routing', value: 0 },
+        { label: 'Routing', value: routingDelay },
       ]
     : [
         { label: tcoLabel, value: tco },
-        { label: 'Routing', value: 0 },
+        { label: 'Routing', value: routingDelay },
         { label: 'Board', value: boardDelay },
       ];
 
@@ -130,7 +131,7 @@ export function PathDiagram({ isInputPath, tcoLabel, boardLabel, tco, boardDelay
             markerEnd="url(#clkArrow)" />
 
           <text x={oscX} y={CLK_Y + 25} fill="#4fc3f780" fontSize={8}
-            textAnchor="middle" fontFamily="monospace">Zero skew (common clock)</text>
+            textAnchor="middle" fontFamily="monospace">Common clock (nominal skew baseline)</text>
         </g>
       )}
 

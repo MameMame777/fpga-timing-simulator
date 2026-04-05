@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { computeEdgeTimes, analyzeInputPath, analyzeOutputPath } from './timing-analyzer.ts';
 import type {
   ClockParams,
+  CaptureClockParams,
   InputPathParams,
   OutputPathParams,
   FPGADeviceParams,
@@ -26,12 +27,16 @@ const baseInput: InputPathParams = {
   tcoSourceMin: 1.0,
   boardDelayMax: 1.5,
   boardDelayMin: 0.5,
+  routingDelayMax: 0.0,
+  routingDelayMin: 0.0,
   portName: 'din',
 };
 
 const baseOutput: OutputPathParams = {
   boardDelayMax: 2.0,
   boardDelayMin: 0.5,
+  routingDelayMax: 0.0,
+  routingDelayMin: 0.0,
   tsuDest: 1.5,
   thDest: 0.3,
   portName: 'dout',
@@ -202,6 +207,17 @@ describe('analyzeInputPath — system_sync', () => {
     expect(r.topology).toBe('system_sync');
     expect(r.edgeConfig).toEqual(FR);
   });
+
+  it('routing delay contributes to input data arrival max/min', () => {
+    const inputWithRouting: InputPathParams = {
+      ...baseInput,
+      routingDelayMax: 0.7,
+      routingDelayMin: 0.2,
+    };
+    const r = analyzeInputPath(baseClock, inputWithRouting, baseFPGA, 'system_sync', RR);
+    expect(r.dataArrivalMax).toBeCloseTo(2.0 + 1.5 + 0.7);
+    expect(r.dataArrivalMin).toBeCloseTo(1.0 + 0.5 + 0.2);
+  });
 });
 
 // ── analyzeInputPath — Source Synchronous ──
@@ -274,6 +290,17 @@ describe('analyzeOutputPath — system_sync', () => {
     // window = 5 (10 - 5)
     expect(r.setupRequired).toBeCloseTo(5 - 1.5);
   });
+
+  it('routing delay contributes to output data arrival max/min', () => {
+    const outputWithRouting: OutputPathParams = {
+      ...baseOutput,
+      routingDelayMax: 0.6,
+      routingDelayMin: 0.1,
+    };
+    const r = analyzeOutputPath(baseClock, outputWithRouting, baseFPGA, 'system_sync', RR);
+    expect(r.dataArrivalMax).toBeCloseTo(3.0 + 2.0 + 0.6);
+    expect(r.dataArrivalMin).toBeCloseTo(1.5 + 0.5 + 0.1);
+  });
 });
 
 // ── analyzeOutputPath — Source Synchronous ──
@@ -313,5 +340,60 @@ describe('edge cases', () => {
     for (const val of [r.setupSlack, r.holdSlack, r.dataArrivalMax, r.dataArrivalMin, r.setupRequired, r.holdRequired]) {
       expect(Number.isFinite(val)).toBe(true);
     }
+  });
+});
+
+// ── Independent Capture Clock ──
+
+describe('computeEdgeTimes with independent capture clock', () => {
+  const capClock: CaptureClockParams = { period: 5, dutyCycle: 50, portName: 'cap_clk' };
+
+  it('R→R with faster capture clock: captures at first rising edge (5ns)', () => {
+    const r = computeEdgeTimes(baseClock, RR, capClock);
+    expect(r.launchTime).toBe(0);
+    expect(r.captureTime).toBe(5);
+    expect(r.effectiveWindow).toBe(5);
+  });
+
+  it('R→F with faster capture clock: captures at first falling edge (2.5ns)', () => {
+    const r = computeEdgeTimes(baseClock, RF, capClock);
+    expect(r.launchTime).toBe(0);
+    expect(r.captureTime).toBeCloseTo(2.5);
+    expect(r.effectiveWindow).toBeCloseTo(2.5);
+  });
+
+  it('F→R with faster capture clock: captures at first rising edge after fallingEdgeL(5ns) = 10ns', () => {
+    const r = computeEdgeTimes(baseClock, FR, capClock);
+    expect(r.launchTime).toBe(5);
+    expect(r.captureTime).toBe(10);
+    expect(r.effectiveWindow).toBe(5);
+  });
+
+  it('same period/duty captureClock still uses independent mode and keeps expected window', () => {
+    const sameClock: CaptureClockParams = { period: 10, dutyCycle: 50, portName: 'same' };
+    const r = computeEdgeTimes(baseClock, RR, sameClock);
+    expect(r.launchTime).toBe(0);
+    expect(r.captureTime).toBe(10);
+    expect(r.effectiveWindow).toBe(10);
+  });
+
+  it('slower capture clock: R→R with 20ns capture period', () => {
+    const slowCap: CaptureClockParams = { period: 20, dutyCycle: 50, portName: 'slow_clk' };
+    const r = computeEdgeTimes(baseClock, RR, slowCap);
+    expect(r.launchTime).toBe(0);
+    expect(r.captureTime).toBe(20);
+    expect(r.effectiveWindow).toBe(20);
+  });
+});
+
+describe('analyzeInputPath with independent capture clock', () => {
+  const capClock: CaptureClockParams = { period: 5, dutyCycle: 50, portName: 'cap_clk' };
+
+  it('halved capture window affects setup margin', () => {
+    const r = analyzeInputPath(baseClock, baseInput, baseFPGA, 'system_sync', RR, undefined, capClock);
+    // effectiveWindow = 5 (capture at 5ns), setupRequired = 5 - 1.2 = 3.8
+    expect(r.setupRequired).toBeCloseTo(3.8);
+    expect(r.dataArrivalMax).toBeCloseTo(3.5);
+    expect(r.setupSlack).toBeCloseTo(0.3);
   });
 });

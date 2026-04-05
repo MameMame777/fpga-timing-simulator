@@ -1,5 +1,6 @@
 import type {
   ClockParams,
+  CaptureClockParams,
   InputPathParams,
   OutputPathParams,
   FPGADeviceParams,
@@ -13,8 +14,11 @@ import type {
 /**
  * Compute effective launch and capture edge times (ns) within one analysis window.
  *
- * The "window" starts at the launch edge and ends at the next capture edge of
- * the specified polarity.  For example:
+ * When captureClock is provided (independent capture clock), the capture edge
+ * is the first edge of the specified polarity on the capture clock that occurs
+ * after the launch edge.
+ *
+ * When captureClock is omitted (same clock), the original behaviour applies:
  *   R→R : launch = 0,         capture = T                   (full period)
  *   R→F : launch = 0,         capture = T × duty            (half-period for 50%)
  *   F→R : launch = T × duty,  capture = T                   (remaining half)
@@ -23,12 +27,41 @@ import type {
 export function computeEdgeTimes(
   clock: ClockParams,
   edgeConfig: EdgeConfig,
+  captureClock?: CaptureClockParams,
 ): { launchTime: number; captureTime: number; effectiveWindow: number } {
   const T = clock.period;
   const duty = clock.dutyCycle / 100;
-  const fallingEdge = T * duty; // time of the first falling edge within one period
+  const fallingEdgeL = T * duty;
 
   let launchTime: number;
+
+  if (captureClock) {
+    // --- Independent capture clock ---
+    launchTime = edgeConfig.launchEdge === 'rising' ? 0 : fallingEdgeL;
+
+    const Tc = captureClock.period;
+    const dutyC = captureClock.dutyCycle / 100;
+
+    // Search for the first capture edge of the right polarity after launchTime
+    let captureTime = Infinity;
+    const maxSearch = Math.ceil(T / Tc) + 2; // enough cycles to find one
+    for (let n = 0; n < maxSearch; n++) {
+      const candidate = edgeConfig.captureEdge === 'rising'
+        ? n * Tc
+        : n * Tc + Tc * dutyC;
+      if (candidate > launchTime + 1e-9) {
+        captureTime = candidate;
+        break;
+      }
+    }
+    if (captureTime === Infinity) {
+      captureTime = launchTime + T; // fallback
+    }
+
+    return { launchTime, captureTime, effectiveWindow: captureTime - launchTime };
+  }
+
+  // --- Same clock (original behaviour) ---
   let captureTime: number;
 
   if (edgeConfig.launchEdge === 'rising' && edgeConfig.captureEdge === 'rising') {
@@ -36,14 +69,14 @@ export function computeEdgeTimes(
     captureTime = T;
   } else if (edgeConfig.launchEdge === 'rising' && edgeConfig.captureEdge === 'falling') {
     launchTime = 0;
-    captureTime = fallingEdge;
+    captureTime = fallingEdgeL;
   } else if (edgeConfig.launchEdge === 'falling' && edgeConfig.captureEdge === 'rising') {
-    launchTime = fallingEdge;
+    launchTime = fallingEdgeL;
     captureTime = T;
   } else {
     // F→F
-    launchTime = fallingEdge;
-    captureTime = T + fallingEdge;
+    launchTime = fallingEdgeL;
+    captureTime = T + fallingEdgeL;
   }
 
   const effectiveWindow = captureTime - launchTime;
@@ -53,7 +86,7 @@ export function computeEdgeTimes(
 /**
  * Analyze input path timing (external device launches → FPGA FF captures).
  *
- * System Synchronous: common clock, zero skew assumed.
+ * System Synchronous: common clock; modeled with a nominal skew baseline.
  * Source Synchronous: forwarded clock travels with data; clock skew = fwdClkDelay − dataBoardDelay.
  */
 export function analyzeInputPath(
@@ -63,12 +96,13 @@ export function analyzeInputPath(
   topology: ClockTopology,
   edgeConfig: EdgeConfig,
   sourceSync?: SourceSyncParams,
+  captureClock?: CaptureClockParams,
 ): AnalysisResult {
-  const { launchTime, captureTime, effectiveWindow } = computeEdgeTimes(clock, edgeConfig);
+  const { launchTime, captureTime, effectiveWindow } = computeEdgeTimes(clock, edgeConfig, captureClock);
   const totalUncertainty = clock.inputJitter + clock.systemJitter + clock.uncertainty;
 
-  const dataArrivalMax = input.tcoSourceMax + input.boardDelayMax;
-  const dataArrivalMin = input.tcoSourceMin + input.boardDelayMin;
+  const dataArrivalMax = input.tcoSourceMax + input.boardDelayMax + input.routingDelayMax;
+  const dataArrivalMin = input.tcoSourceMin + input.boardDelayMin + input.routingDelayMin;
 
   let baseClockSkew = 0;
   let setupRequired: number;
@@ -77,12 +111,13 @@ export function analyzeInputPath(
   if (topology === 'source_sync' && sourceSync) {
     // Source sync: the capture clock (forwarded) has its own board delay.
     // Clock skew from the FPGA's perspective:
-    //   skewMax = fwdClkDelayMax − dataBoardDelayMin  (worst-case for hold)
-    //   skewMin = fwdClkDelayMin − dataBoardDelayMax  (worst-case for setup)
+    //   skewMax = fwdClkDelayMax − (dataBoardDelayMin + dataRoutingDelayMin)
+    //   skewMin = fwdClkDelayMin − (dataBoardDelayMax + dataRoutingDelayMax)
     // But we fold the skew into setup/hold required calculations.
     const clockArrivalMax = sourceSync.fwdClockBoardDelayMax;
     const clockArrivalMin = sourceSync.fwdClockBoardDelayMin;
-    baseClockSkew = (clockArrivalMax + clockArrivalMin) / 2 - (input.boardDelayMax + input.boardDelayMin) / 2;
+    baseClockSkew = (clockArrivalMax + clockArrivalMin) / 2
+      - (input.boardDelayMax + input.boardDelayMin + input.routingDelayMax + input.routingDelayMin) / 2;
 
     // Setup: data must settle before capture edge + clock arrival - tsu
     // Required time = effectiveWindow + clockArrivalMin - tsu  (from launch perspective)
@@ -90,7 +125,7 @@ export function analyzeInputPath(
     // Hold: data must not change until after capture edge + clock arrival + th
     holdRequired = clockArrivalMax + clock.skew + fpga.th + totalUncertainty;
   } else {
-    // System synchronous: common clock, zero skew
+    // System synchronous: common clock with nominal skew baseline
     setupRequired = effectiveWindow + clock.skew - fpga.tsu - totalUncertainty;
     holdRequired = clock.skew + fpga.th + totalUncertainty;
   }
@@ -130,12 +165,13 @@ export function analyzeOutputPath(
   topology: ClockTopology,
   edgeConfig: EdgeConfig,
   sourceSync?: SourceSyncParams,
+  captureClock?: CaptureClockParams,
 ): AnalysisResult {
-  const { launchTime, captureTime, effectiveWindow } = computeEdgeTimes(clock, edgeConfig);
+  const { launchTime, captureTime, effectiveWindow } = computeEdgeTimes(clock, edgeConfig, captureClock);
   const totalUncertainty = clock.inputJitter + clock.systemJitter + clock.uncertainty;
 
-  const dataArrivalMax = fpga.tcoMax + output.boardDelayMax;
-  const dataArrivalMin = fpga.tcoMin + output.boardDelayMin;
+  const dataArrivalMax = fpga.tcoMax + output.boardDelayMax + output.routingDelayMax;
+  const dataArrivalMin = fpga.tcoMin + output.boardDelayMin + output.routingDelayMin;
   let baseClockSkew = 0;
   let setupRequired: number;
   let holdRequired: number;
@@ -143,7 +179,8 @@ export function analyzeOutputPath(
   if (topology === 'source_sync' && sourceSync) {
     const clockArrivalMax = sourceSync.fwdClockBoardDelayMax;
     const clockArrivalMin = sourceSync.fwdClockBoardDelayMin;
-    baseClockSkew = (clockArrivalMax + clockArrivalMin) / 2 - (output.boardDelayMax + output.boardDelayMin) / 2;
+    baseClockSkew = (clockArrivalMax + clockArrivalMin) / 2
+      - (output.boardDelayMax + output.boardDelayMin + output.routingDelayMax + output.routingDelayMin) / 2;
 
     setupRequired = effectiveWindow + clockArrivalMin + clock.skew - output.tsuDest - totalUncertainty;
     holdRequired = clockArrivalMax + clock.skew + output.thDest + totalUncertainty;

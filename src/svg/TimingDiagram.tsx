@@ -1,18 +1,18 @@
-import type { ClockParams, AnalysisResult } from '../types/timing.ts';
+import type { ClockParams, CaptureClockParams, AnalysisResult } from '../types/timing.ts';
 
 interface Props {
   clock: ClockParams;
   result: AnalysisResult;
   isInputPath: boolean;
+  captureClock?: CaptureClockParams;
 }
 
 const W = 800;
-const H = 420;
 const PLOT_LEFT = 100;
 const PLOT_RIGHT = W - 40;
 const PLOT_W = PLOT_RIGHT - PLOT_LEFT;
 
-export function TimingDiagram({ clock, result, isInputPath }: Props) {
+export function TimingDiagram({ clock, result, isInputPath, captureClock }: Props) {
   const window = result.captureTime - result.launchTime;
   if (window <= 0) return null;
 
@@ -41,23 +41,58 @@ export function TimingDiagram({ clock, result, isInputPath }: Props) {
   const launchSymbol = edgeCfg.launchEdge === 'rising' ? '↑' : '↓';
   const captureSymbol = edgeCfg.captureEdge === 'rising' ? '↑' : '↓';
 
+  // Independent capture clock mode: show separate lane whenever capture clock is provided.
+  const hasIndependentCap = !!captureClock;
+  const extraLane = hasIndependentCap ? 60 : 0;
+  // Compact height so the full diagram fits without requiring container scrolling.
+  const H = 390 + extraLane;
+
   // Clock waveform Y
   const clkY = 60;
   const clkH = 40;
-  const launchClockY = edgeCfg.launchEdge === 'rising' ? clkY : clkY + clkH;
-  const captureClockY = edgeCfg.captureEdge === 'rising' ? clkY : clkY + clkH;
+  const launchClkEdgeY = edgeCfg.launchEdge === 'rising' ? clkY : clkY + clkH;
+  const capClkY = clkY + extraLane;
+  const captureClkEdgeY = edgeCfg.captureEdge === 'rising' ? capClkY : capClkY + clkH;
   // Data waveform Y
-  const dataY = 140;
+  const dataY = 140 + extraLane;
   const dataH = 40;
   // Margin annotations Y
-  const annY = 250;
+  const annY = 220 + extraLane;
 
   const duty = clock.dutyCycle / 100;
   const period = clock.period;
   const highTime = period * duty;
 
-  // Build clock polyline points covering the analysis window
-  const clkPoints = buildClockPoints(clkY, clkH, toX, chartStart, chartEnd, period, highTime, edgeCfg.launchEdge);
+  // Build launch clock polyline
+  const launchClkPoints = buildClockPoints(
+    clkY,
+    clkH,
+    toX,
+    chartStart,
+    chartEnd,
+    period,
+    highTime,
+    0,
+    edgeCfg.launchEdge,
+  );
+
+  // Build capture clock polyline (independent or same as launch)
+  const capDuty = hasIndependentCap ? captureClock!.dutyCycle / 100 : duty;
+  const capPeriod = hasIndependentCap ? captureClock!.period : period;
+  const capHighTime = capPeriod * capDuty;
+  const captureClkPoints = hasIndependentCap
+    ? buildClockPoints(
+      capClkY,
+      clkH,
+      toX,
+      chartStart,
+      chartEnd,
+      capPeriod,
+      capHighTime,
+      window,
+      edgeCfg.captureEdge,
+    )
+    : null;
 
   // Topology label
   const topoLabel = result.topology === 'source_sync' ? 'Source Synchronous' : 'System Synchronous';
@@ -96,14 +131,23 @@ export function TimingDiagram({ clock, result, isInputPath }: Props) {
         Required(setup/hold): {result.setupRequired.toFixed(2)} / {result.holdRequired.toFixed(2)} ns
       </text>
 
-      {/* Clock waveform */}
+      {/* Launch clock waveform */}
       <text x={PLOT_LEFT - 8} y={clkY + clkH / 2 + 4} fill="#c8c8e0"
-        fontSize={11} textAnchor="end" fontFamily="monospace">Clock</text>
-      <polyline points={clkPoints} fill="none" stroke="#4fc3f7" strokeWidth={2.5} />
+        fontSize={11} textAnchor="end" fontFamily="monospace">{hasIndependentCap ? 'Launch Clk' : 'Clock'}</text>
+      <polyline points={launchClkPoints} fill="none" stroke="#4fc3f7" strokeWidth={2.5} />
+
+      {/* Capture clock waveform (independent) */}
+      {hasIndependentCap && captureClkPoints && (
+        <>
+          <text x={PLOT_LEFT - 8} y={capClkY + clkH / 2 + 4} fill="#c8c8e0"
+            fontSize={11} textAnchor="end" fontFamily="monospace">Capture Clk</text>
+          <polyline points={captureClkPoints} fill="none" stroke="#ff7043" strokeWidth={2.5} />
+        </>
+      )}
 
       {/* Clock edge points */}
-      <circle cx={launchX} cy={launchClockY} r={5} fill="#4fc3f7" stroke="#0d0d1a" strokeWidth={1.5} />
-      <circle cx={captureX} cy={captureClockY} r={5} fill="#ff7043" stroke="#0d0d1a" strokeWidth={1.5} />
+      <circle cx={launchX} cy={launchClkEdgeY} r={5} fill="#4fc3f7" stroke="#0d0d1a" strokeWidth={1.5} />
+      <circle cx={captureX} cy={captureClkEdgeY} r={5} fill="#ff7043" stroke="#0d0d1a" strokeWidth={1.5} />
 
       {/* Launch edge marker */}
       <line x1={launchX} y1={30} x2={launchX} y2={H - 20}
@@ -165,7 +209,7 @@ export function TimingDiagram({ clock, result, isInputPath }: Props) {
 
       {/* Clock skew annotation (source sync) */}
       {result.clockSkew !== 0 && (
-        <text x={captureX} y={clkY + clkH + 18} fill="#80cbc4" fontSize={9}
+        <text x={captureX} y={capClkY + clkH + 18} fill="#80cbc4" fontSize={9}
           textAnchor="middle" fontFamily="monospace">
           clk skew: {result.clockSkew.toFixed(2)}ns
         </text>
@@ -175,29 +219,29 @@ export function TimingDiagram({ clock, result, isInputPath }: Props) {
       <DimensionArrow x1={arrMaxX} x2={setupReqX} y={annY}
         label={`Setup Slack: ${result.setupSlack.toFixed(2)} ns`}
         color={hasSetupV ? '#ef5350' : '#66bb6a'} />
-      <DimensionArrow x1={holdReqX} x2={arrMinX} y={annY + 35}
+      <DimensionArrow x1={holdReqX} x2={arrMinX} y={annY + 24}
         label={`Hold Slack: ${result.holdSlack.toFixed(2)} ns`}
         color={hasHoldV ? '#ef5350' : '#66bb6a'} />
-      <DimensionArrow x1={launchX} x2={setupReqX} y={annY + 70}
+      <DimensionArrow x1={launchX} x2={setupReqX} y={annY + 48}
         label={`Required(setup): ${result.setupRequired.toFixed(2)} ns`}
         color="#ff9800" />
-      <DimensionArrow x1={launchX} x2={holdReqX} y={annY + 88}
+      <DimensionArrow x1={launchX} x2={holdReqX} y={annY + 66}
         label={`Required(hold): ${result.holdRequired.toFixed(2)} ns`}
         color="#42a5f5" />
-      <DimensionArrow x1={launchX} x2={arrMaxX} y={annY + 122}
+      <DimensionArrow x1={launchX} x2={arrMaxX} y={annY + 90}
         label={`Data Arrival(max): ${result.dataArrivalMax.toFixed(2)} ns`}
         color="#ffa726" />
 
       {/* Edge window annotation */}
-      <DimensionArrow x1={launchX} x2={captureX} y={annY + 140}
+      <DimensionArrow x1={launchX} x2={captureX} y={annY + 108}
         label={`Effective Window: ${window.toFixed(2)} ns (${edgeCfg.launchEdge[0].toUpperCase()}→${edgeCfg.captureEdge[0].toUpperCase()})`}
         color="#6a6a8a" />
 
       {/* Pre/post edge context annotation */}
-      <DimensionArrow x1={toX(chartStart)} x2={launchX} y={annY + 158}
+      <DimensionArrow x1={toX(chartStart)} x2={launchX} y={annY + 126}
         label={`Pre-edge: ${preEdgeMargin.toFixed(2)} ns`}
         color="#5f6b8a" />
-      <DimensionArrow x1={captureX} x2={toX(chartEnd)} y={annY + 176}
+      <DimensionArrow x1={captureX} x2={toX(chartEnd)} y={annY + 144}
         label={`Post-edge: ${postEdgeMargin.toFixed(2)} ns`}
         color="#5f6b8a" />
 
@@ -227,13 +271,17 @@ function buildClockPoints(
   chartEnd: number,
   period: number,
   highTime: number,
-  launchEdge: 'rising' | 'falling',
+  anchorTime: number,
+  anchorEdge: 'rising' | 'falling',
 ): string {
   const low = clkY + clkH;
   const high = clkY;
   const pts: string[] = [];
 
-  const firstRising = launchEdge === 'rising' ? 0 : -(period - highTime);
+  // Phase-anchor this lane so the requested edge polarity occurs at anchorTime.
+  const firstRising = anchorEdge === 'rising'
+    ? anchorTime
+    : anchorTime - (period - highTime);
   const isHighAt = (t: number): boolean => {
     const phase = (((t - firstRising) % period) + period) % period;
     return phase < highTime;

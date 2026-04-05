@@ -57,31 +57,31 @@ export function ConstraintOutput({
   const outputClockRef = isSourceSync ? sourceSyncParams.fwdClockPortName : clock.portName;
 
   const inputMax = isSourceSync
-    ? inputPath.tcoSourceMax + clock.skew
-    : inputPath.tcoSourceMax + inputPath.boardDelayMax + clock.skew;
+    ? inputPath.tcoSourceMax + inputPath.routingDelayMax + clock.skew
+    : inputPath.tcoSourceMax + inputPath.boardDelayMax + inputPath.routingDelayMax + clock.skew;
   const inputMin = isSourceSync
-    ? inputPath.tcoSourceMin + clock.skew
-    : inputPath.tcoSourceMin + inputPath.boardDelayMin + clock.skew;
+    ? inputPath.tcoSourceMin + inputPath.routingDelayMin + clock.skew
+    : inputPath.tcoSourceMin + inputPath.boardDelayMin + inputPath.routingDelayMin + clock.skew;
 
   const outputMax = isSourceSync
-    ? outputPath.boardDelayMax + outputPath.tsuDest - sourceSyncParams.fwdClockBoardDelayMin + clock.skew
-    : outputPath.boardDelayMax + outputPath.tsuDest + clock.skew;
+    ? outputPath.boardDelayMax + outputPath.routingDelayMax + outputPath.tsuDest - sourceSyncParams.fwdClockBoardDelayMin + clock.skew
+    : outputPath.boardDelayMax + outputPath.routingDelayMax + outputPath.tsuDest + clock.skew;
   const outputMin = isSourceSync
-    ? outputPath.boardDelayMin - outputPath.thDest - sourceSyncParams.fwdClockBoardDelayMax + clock.skew
-    : outputPath.boardDelayMin - outputPath.thDest + clock.skew;
+    ? outputPath.boardDelayMin + outputPath.routingDelayMin - outputPath.thDest - sourceSyncParams.fwdClockBoardDelayMax + clock.skew
+    : outputPath.boardDelayMin + outputPath.routingDelayMin - outputPath.thDest + clock.skew;
 
   const inputMaxExpr = isSourceSync
-    ? `${fmt(inputPath.tcoSourceMax)} ${fmtSigned(clock.skew)}`
-    : `${fmt(inputPath.tcoSourceMax)} + ${fmt(inputPath.boardDelayMax)} ${fmtSigned(clock.skew)}`;
+    ? `${fmt(inputPath.tcoSourceMax)} + ${fmt(inputPath.routingDelayMax)} ${fmtSigned(clock.skew)}`
+    : `${fmt(inputPath.tcoSourceMax)} + ${fmt(inputPath.boardDelayMax)} + ${fmt(inputPath.routingDelayMax)} ${fmtSigned(clock.skew)}`;
   const inputMinExpr = isSourceSync
-    ? `${fmt(inputPath.tcoSourceMin)} ${fmtSigned(clock.skew)}`
-    : `${fmt(inputPath.tcoSourceMin)} + ${fmt(inputPath.boardDelayMin)} ${fmtSigned(clock.skew)}`;
+    ? `${fmt(inputPath.tcoSourceMin)} + ${fmt(inputPath.routingDelayMin)} ${fmtSigned(clock.skew)}`
+    : `${fmt(inputPath.tcoSourceMin)} + ${fmt(inputPath.boardDelayMin)} + ${fmt(inputPath.routingDelayMin)} ${fmtSigned(clock.skew)}`;
   const outputMaxExpr = isSourceSync
-    ? `${fmt(outputPath.boardDelayMax)} + ${fmt(outputPath.tsuDest)} - ${fmt(sourceSyncParams.fwdClockBoardDelayMin)} ${fmtSigned(clock.skew)}`
-    : `${fmt(outputPath.boardDelayMax)} + ${fmt(outputPath.tsuDest)} ${fmtSigned(clock.skew)}`;
+    ? `${fmt(outputPath.boardDelayMax)} + ${fmt(outputPath.routingDelayMax)} + ${fmt(outputPath.tsuDest)} - ${fmt(sourceSyncParams.fwdClockBoardDelayMin)} ${fmtSigned(clock.skew)}`
+    : `${fmt(outputPath.boardDelayMax)} + ${fmt(outputPath.routingDelayMax)} + ${fmt(outputPath.tsuDest)} ${fmtSigned(clock.skew)}`;
   const outputMinExpr = isSourceSync
-    ? `${fmt(outputPath.boardDelayMin)} - ${fmt(outputPath.thDest)} - ${fmt(sourceSyncParams.fwdClockBoardDelayMax)} ${fmtSigned(clock.skew)}`
-    : `${fmt(outputPath.boardDelayMin)} - ${fmt(outputPath.thDest)} ${fmtSigned(clock.skew)}`;
+    ? `${fmt(outputPath.boardDelayMin)} + ${fmt(outputPath.routingDelayMin)} - ${fmt(outputPath.thDest)} - ${fmt(sourceSyncParams.fwdClockBoardDelayMax)} ${fmtSigned(clock.skew)}`
+    : `${fmt(outputPath.boardDelayMin)} + ${fmt(outputPath.routingDelayMin)} - ${fmt(outputPath.thDest)} ${fmtSigned(clock.skew)}`;
   const topologyLabel = isSourceSync ? 'Source-synchronous' : 'System-synchronous';
 
   useEffect(() => {
@@ -134,13 +134,13 @@ export function ConstraintOutput({
                   <div className="constraint-block-title">Input delay</div>
                 {!isSourceSync && (
                   <>
-                    <div className="constraint-line">Equation: input_delay(max/min) = tco_src(max/min) + board_delay(max/min)</div>
+                    <div className="constraint-line">Equation: input_delay(max/min) = tco_src(max/min) + board_delay(max/min) + routing_delay(max/min)</div>
                     <div className="constraint-line">Equation (applied): input_delay(max/min) += clk_skew</div>
                   </>
                 )}
                 {isSourceSync && (
                   <>
-                    <div className="constraint-line">Equation: input_delay(max/min) = tco_src(max/min)</div>
+                    <div className="constraint-line">Equation: input_delay(max/min) = tco_src(max/min) + routing_delay(max/min)</div>
                     <div className="constraint-line">Equation (applied): input_delay(max/min) += clk_skew</div>
                   </>
                 )}
@@ -152,15 +152,15 @@ export function ConstraintOutput({
                   <div className="constraint-block-title">Output delay</div>
                   {!isSourceSync && (
                     <>
-                      <div className="constraint-line">Equation(max): output_delay_max = board_delay_max + tsu_dest</div>
-                      <div className="constraint-line">Equation(min): output_delay_min = board_delay_min - th_dest</div>
+                      <div className="constraint-line">Equation(max): output_delay_max = board_delay_max + routing_delay_max + tsu_dest</div>
+                      <div className="constraint-line">Equation(min): output_delay_min = board_delay_min + routing_delay_min - th_dest</div>
                       <div className="constraint-line">Equation (applied): output_delay(max/min) += clk_skew</div>
                     </>
                   )}
                   {isSourceSync && (
                     <>
-                      <div className="constraint-line">Equation(max): output_delay_max = board_delay_max + tsu_dest - fwd_clk_delay_min</div>
-                      <div className="constraint-line">Equation(min): output_delay_min = board_delay_min - th_dest - fwd_clk_delay_max</div>
+                      <div className="constraint-line">Equation(max): output_delay_max = board_delay_max + routing_delay_max + tsu_dest - fwd_clk_delay_min</div>
+                      <div className="constraint-line">Equation(min): output_delay_min = board_delay_min + routing_delay_min - th_dest - fwd_clk_delay_max</div>
                       <div className="constraint-line">Equation (applied): output_delay(max/min) += clk_skew</div>
                     </>
                   )}

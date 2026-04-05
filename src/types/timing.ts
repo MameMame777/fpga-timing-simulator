@@ -18,7 +18,7 @@ export interface SourceSyncParams {
   fwdClockPortName: string;
 }
 
-// Clock parameters
+// Clock parameters (used as launch clock; also serves as capture clock when independent capture is off)
 export interface ClockParams {
   period: number;      // ns
   dutyCycle: number;   // 0-100 (%)
@@ -29,12 +29,21 @@ export interface ClockParams {
   uncertainty: number; // set_clock_uncertainty value (ns)
 }
 
+// Independent capture clock parameters (period, duty, port only; jitter/uncertainty are shared)
+export interface CaptureClockParams {
+  period: number;      // ns
+  dutyCycle: number;   // 0-100 (%)
+  portName: string;
+}
+
 // Input path: External device launches data -> board trace -> FPGA pin -> FPGA internal FF captures
 export interface InputPathParams {
   tcoSourceMax: number;    // Source device clock-to-output max (ns)
   tcoSourceMin: number;    // Source device clock-to-output min (ns)
   boardDelayMax: number;   // PCB trace delay max (ns)
   boardDelayMin: number;   // PCB trace delay min (ns)
+  routingDelayMax: number; // FPGA internal routing delay max (ns)
+  routingDelayMin: number; // FPGA internal routing delay min (ns)
   portName: string;
 }
 
@@ -42,6 +51,8 @@ export interface InputPathParams {
 export interface OutputPathParams {
   boardDelayMax: number;   // PCB trace delay max (ns)
   boardDelayMin: number;   // PCB trace delay min (ns)
+  routingDelayMax: number; // FPGA internal routing delay max (ns)
+  routingDelayMin: number; // FPGA internal routing delay min (ns)
   tsuDest: number;         // Destination device setup time (ns)
   thDest: number;          // Destination device hold time (ns)
   portName: string;
@@ -107,6 +118,8 @@ export type ViewMode = 'waveform' | 'diagram';
 // Complete app state
 export interface TimingState {
   clock: ClockParams;
+  useIndependentCaptureClock: boolean;
+  captureClock: CaptureClockParams;
   inputPath: InputPathParams;
   outputPath: OutputPathParams;
   fpga: FPGADeviceParams;

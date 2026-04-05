@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import type {
   ClockParams,
+  CaptureClockParams,
   InputPathParams,
   OutputPathParams,
   FPGADeviceParams,
@@ -36,12 +37,16 @@ const DEFAULT_INPUT: InputPathParams = {
   tcoSourceMin: 1.0,
   boardDelayMax: 1.5,
   boardDelayMin: 0.5,
+  routingDelayMax: 0.0,
+  routingDelayMin: 0.0,
   portName: 'data_in',
 };
 
 const DEFAULT_OUTPUT: OutputPathParams = {
   boardDelayMax: 2.0,
   boardDelayMin: 0.5,
+  routingDelayMax: 0.0,
+  routingDelayMin: 0.0,
   tsuDest: 1.5,
   thDest: 0.3,
   portName: 'data_out',
@@ -60,8 +65,16 @@ const DEFAULT_SOURCE_SYNC: SourceSyncParams = {
   fwdClockPortName: 'fwd_clk',
 };
 
+const DEFAULT_CAPTURE_CLOCK: CaptureClockParams = {
+  period: 10,
+  dutyCycle: 50,
+  portName: 'cap_clk',
+};
+
 export default function App() {
   const [clock, setClock] = useState<ClockParams>(DEFAULT_CLOCK);
+  const [useIndependentCaptureClock, setUseIndependentCaptureClock] = useState(false);
+  const [captureClock, setCaptureClock] = useState<CaptureClockParams>(DEFAULT_CAPTURE_CLOCK);
   const [inputPath, setInputPath] = useState<InputPathParams>(DEFAULT_INPUT);
   const [outputPath, setOutputPath] = useState<OutputPathParams>(DEFAULT_OUTPUT);
   const [fpga, setFPGA] = useState<FPGADeviceParams>(DEFAULT_FPGA);
@@ -72,19 +85,21 @@ export default function App() {
   const [edgeConfig, setEdgeConfig] = useState<EdgeConfig>({ launchEdge: 'rising', captureEdge: 'rising' });
   const [sourceSyncParams, setSourceSyncParams] = useState<SourceSyncParams>(DEFAULT_SOURCE_SYNC);
 
+  const effectiveCaptureClock = useIndependentCaptureClock ? captureClock : undefined;
+
   const inputResult = useMemo(
-    () => analyzeInputPath(clock, inputPath, fpga, topology, edgeConfig, sourceSyncParams),
-    [clock, inputPath, fpga, topology, edgeConfig, sourceSyncParams],
+    () => analyzeInputPath(clock, inputPath, fpga, topology, edgeConfig, sourceSyncParams, effectiveCaptureClock),
+    [clock, inputPath, fpga, topology, edgeConfig, sourceSyncParams, effectiveCaptureClock],
   );
 
   const outputResult = useMemo(
-    () => analyzeOutputPath(clock, outputPath, fpga, topology, edgeConfig, sourceSyncParams),
-    [clock, outputPath, fpga, topology, edgeConfig, sourceSyncParams],
+    () => analyzeOutputPath(clock, outputPath, fpga, topology, edgeConfig, sourceSyncParams, effectiveCaptureClock),
+    [clock, outputPath, fpga, topology, edgeConfig, sourceSyncParams, effectiveCaptureClock],
   );
 
   const xdcText = useMemo(
-    () => generateXDC(clock, inputPath, outputPath, fpga, topology, edgeConfig, sourceSyncParams),
-    [clock, inputPath, outputPath, fpga, topology, edgeConfig, sourceSyncParams],
+    () => generateXDC(clock, inputPath, outputPath, fpga, topology, edgeConfig, sourceSyncParams, effectiveCaptureClock),
+    [clock, inputPath, outputPath, fpga, topology, edgeConfig, sourceSyncParams, effectiveCaptureClock],
   );
 
   const activeResult = activePath === 'input' ? inputResult : outputResult;
@@ -99,6 +114,7 @@ export default function App() {
         boardLabel: `${inputPath.boardDelayMin}~${inputPath.boardDelayMax} ns`,
         tco: inputPath.tcoSourceMax,
         boardDelay: inputPath.boardDelayMax,
+        routingDelay: inputPath.routingDelayMax,
         topology,
         sourceSyncParams,
       }
@@ -109,6 +125,7 @@ export default function App() {
         boardLabel: `${outputPath.boardDelayMin}~${outputPath.boardDelayMax} ns`,
         tco: fpga.tcoMax,
         boardDelay: outputPath.boardDelayMax,
+        routingDelay: outputPath.routingDelayMax,
         topology,
         sourceSyncParams,
       };
@@ -133,6 +150,8 @@ export default function App() {
             dataRateMode={dataRateMode}
             edgeConfig={edgeConfig}
             sourceSyncParams={sourceSyncParams}
+            useIndependentCaptureClock={useIndependentCaptureClock}
+            captureClock={captureClock}
             onClockChange={setClock}
             onInputPathChange={setInputPath}
             onOutputPathChange={setOutputPath}
@@ -141,6 +160,8 @@ export default function App() {
             onDataRateModeChange={setDataRateMode}
             onEdgeConfigChange={setEdgeConfig}
             onSourceSyncChange={setSourceSyncParams}
+            onUseIndependentCaptureClockChange={setUseIndependentCaptureClock}
+            onCaptureClockChange={setCaptureClock}
           />
         </aside>
 
@@ -184,7 +205,7 @@ export default function App() {
           </div>
 
           {/* Main visualization */}
-          <div className="visualization">
+          <div className={`visualization ${viewMode === 'diagram' ? 'diagram-mode' : ''}`}>
             {viewMode === 'waveform' ? (
               <WaveformView
                 clock={clock}
@@ -192,12 +213,14 @@ export default function App() {
                 isInputPath={isInputPath}
                 topology={topology}
                 sourceSyncParams={sourceSyncParams}
+                captureClock={effectiveCaptureClock}
               />
             ) : (
               <TimingDiagram
                 clock={clock}
                 result={activeResult}
                 isInputPath={isInputPath}
+                captureClock={effectiveCaptureClock}
               />
             )}
           </div>

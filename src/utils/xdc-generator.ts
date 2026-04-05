@@ -1,5 +1,6 @@
 import type {
   ClockParams,
+  CaptureClockParams,
   InputPathParams,
   OutputPathParams,
   FPGADeviceParams,
@@ -19,6 +20,7 @@ export function generateXDC(
   topology: ClockTopology,
   edgeConfig: EdgeConfig,
   sourceSync?: SourceSyncParams,
+  captureClock?: CaptureClockParams,
 ): string {
   const lines: string[] = [
     `# FPGA Timing Constraints (XDC / SDC)`,
@@ -27,12 +29,21 @@ export function generateXDC(
     `# Edge: Launch=${edgeConfig.launchEdge}, Capture=${edgeConfig.captureEdge}`,
     `# Jitter: input=${fmt(clock.inputJitter)}ns, system=${fmt(clock.systemJitter)}ns, uncertainty=${fmt(clock.uncertainty)}ns`,
     ``,
-    `# Clock definition`,
+    `# Launch clock definition`,
     `create_clock -period ${fmt(clock.period)} -name ${clock.portName} [get_ports ${clock.portName}]`,
     `set_input_jitter [get_clocks -of_objects [get_ports ${clock.portName}]] ${fmt(clock.inputJitter)}`,
     `set_system_jitter ${fmt(clock.systemJitter)}`,
     `set_clock_uncertainty ${fmt(clock.uncertainty)} [get_clocks ${clock.portName}]`,
   ];
+
+  // Independent capture clock
+  if (captureClock) {
+    lines.push(``);
+    lines.push(`# Capture clock definition (independent)`);
+    lines.push(`create_clock -period ${fmt(captureClock.period)} -name ${captureClock.portName} [get_ports ${captureClock.portName}]`);
+    lines.push(`set_clock_uncertainty ${fmt(clock.uncertainty)} -from [get_clocks ${clock.portName}] -to [get_clocks ${captureClock.portName}]`);
+    lines.push(`set_clock_uncertainty ${fmt(clock.uncertainty)} -from [get_clocks ${captureClock.portName}] -to [get_clocks ${clock.portName}]`);
+  }
 
   // Source sync: create forwarded clock definition
   if (topology === 'source_sync' && sourceSync) {
@@ -47,10 +58,10 @@ export function generateXDC(
   const skew = clock.skew;
   const inputClockRef = (topology === 'source_sync' && sourceSync)
     ? sourceSync.fwdClockPortName
-    : clock.portName;
+    : captureClock ? captureClock.portName : clock.portName;
   const outputClockRef = (topology === 'source_sync' && sourceSync)
     ? sourceSync.fwdClockPortName
-    : clock.portName;
+    : captureClock ? captureClock.portName : clock.portName;
 
   lines.push(``);
   lines.push(`# Input delay constraints`);
@@ -58,31 +69,31 @@ export function generateXDC(
 
   if (topology === 'source_sync' && sourceSync) {
     lines.push(`# Source Synchronous: referenced to forwarded clock (${inputClockRef})`);
-    lines.push(`# input_delay = tco_source + clock_skew`);
-    lines.push(`# Board delays are implicit — clock and data travel together`);
-    lines.push(`set_input_delay -max ${fmt(inputPath.tcoSourceMax + skew)}${captureFallFlag} -clock ${inputClockRef} [get_ports ${inputPath.portName}]`);
-    lines.push(`set_input_delay -min ${fmt(inputPath.tcoSourceMin + skew)}${captureFallFlag} -clock ${inputClockRef} [get_ports ${inputPath.portName}]`);
+    lines.push(`# input_delay = tco_source + routing_delay + clock_skew`);
+    lines.push(`# Board delays are implicit — forwarded clock and data travel together on PCB`);
+    lines.push(`set_input_delay -max ${fmt(inputPath.tcoSourceMax + inputPath.routingDelayMax + skew)}${captureFallFlag} -clock ${inputClockRef} [get_ports ${inputPath.portName}]`);
+    lines.push(`set_input_delay -min ${fmt(inputPath.tcoSourceMin + inputPath.routingDelayMin + skew)}${captureFallFlag} -clock ${inputClockRef} [get_ports ${inputPath.portName}]`);
   } else {
     lines.push(`# System Synchronous: referenced to system clock (${clock.portName})`);
-    lines.push(`# input_delay = tco_source + board_delay + clock_skew (from source launch clock to FPGA pin)`);
-    lines.push(`set_input_delay -max ${fmt(inputPath.tcoSourceMax + inputPath.boardDelayMax + skew)}${captureFallFlag} -clock ${clock.portName} [get_ports ${inputPath.portName}]`);
-    lines.push(`set_input_delay -min ${fmt(inputPath.tcoSourceMin + inputPath.boardDelayMin + skew)}${captureFallFlag} -clock ${clock.portName} [get_ports ${inputPath.portName}]`);
+    lines.push(`# input_delay = tco_source + board_delay + routing_delay + clock_skew (source launch clock -> FPGA FF)`);
+    lines.push(`set_input_delay -max ${fmt(inputPath.tcoSourceMax + inputPath.boardDelayMax + inputPath.routingDelayMax + skew)}${captureFallFlag} -clock ${clock.portName} [get_ports ${inputPath.portName}]`);
+    lines.push(`set_input_delay -min ${fmt(inputPath.tcoSourceMin + inputPath.boardDelayMin + inputPath.routingDelayMin + skew)}${captureFallFlag} -clock ${clock.portName} [get_ports ${inputPath.portName}]`);
   }
 
   lines.push(``);
   lines.push(`# Output delay constraints`);
   if (topology === 'source_sync' && sourceSync) {
     lines.push(`# Source Synchronous: referenced to forwarded clock (${outputClockRef})`);
-    lines.push(`# output_delay_max = board_delay_max + tsu_dest - fwd_clk_delay_min + clock_skew`);
-    lines.push(`# output_delay_min = board_delay_min - th_dest - fwd_clk_delay_max + clock_skew`);
-    lines.push(`set_output_delay -max ${fmt(outputPath.boardDelayMax + outputPath.tsuDest - sourceSync.fwdClockBoardDelayMin + skew)}${captureFallFlag} -clock ${outputClockRef} [get_ports ${outputPath.portName}]`);
-    lines.push(`set_output_delay -min ${fmt(outputPath.boardDelayMin - outputPath.thDest - sourceSync.fwdClockBoardDelayMax + skew)}${captureFallFlag} -clock ${outputClockRef} [get_ports ${outputPath.portName}]`);
+    lines.push(`# output_delay_max = board_delay_max + routing_delay_max + tsu_dest - fwd_clk_delay_min + clock_skew`);
+    lines.push(`# output_delay_min = board_delay_min + routing_delay_min - th_dest - fwd_clk_delay_max + clock_skew`);
+    lines.push(`set_output_delay -max ${fmt(outputPath.boardDelayMax + outputPath.routingDelayMax + outputPath.tsuDest - sourceSync.fwdClockBoardDelayMin + skew)}${captureFallFlag} -clock ${outputClockRef} [get_ports ${outputPath.portName}]`);
+    lines.push(`set_output_delay -min ${fmt(outputPath.boardDelayMin + outputPath.routingDelayMin - outputPath.thDest - sourceSync.fwdClockBoardDelayMax + skew)}${captureFallFlag} -clock ${outputClockRef} [get_ports ${outputPath.portName}]`);
   } else {
-    lines.push(`# Data path: FPGA pin --(board_delay)--> Destination FF`);
-    lines.push(`# output_delay_max = board_delay_max + tsu_dest + clock_skew`);
-    lines.push(`# output_delay_min = board_delay_min - th_dest + clock_skew`);
-    lines.push(`set_output_delay -max ${fmt(outputPath.boardDelayMax + outputPath.tsuDest + skew)}${captureFallFlag} -clock ${clock.portName} [get_ports ${outputPath.portName}]`);
-    lines.push(`set_output_delay -min ${fmt(outputPath.boardDelayMin - outputPath.thDest + skew)}${captureFallFlag} -clock ${clock.portName} [get_ports ${outputPath.portName}]`);
+    lines.push(`# Data path: launch FF -> routing_delay -> FPGA pin -> board_delay -> destination FF`);
+    lines.push(`# output_delay_max = board_delay_max + routing_delay_max + tsu_dest + clock_skew`);
+    lines.push(`# output_delay_min = board_delay_min + routing_delay_min - th_dest + clock_skew`);
+    lines.push(`set_output_delay -max ${fmt(outputPath.boardDelayMax + outputPath.routingDelayMax + outputPath.tsuDest + skew)}${captureFallFlag} -clock ${clock.portName} [get_ports ${outputPath.portName}]`);
+    lines.push(`set_output_delay -min ${fmt(outputPath.boardDelayMin + outputPath.routingDelayMin - outputPath.thDest + skew)}${captureFallFlag} -clock ${clock.portName} [get_ports ${outputPath.portName}]`);
   }
 
   lines.push(``);

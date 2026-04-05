@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import type {
   ActivePath,
   ClockParams,
+  CaptureClockParams,
   InputPathParams,
   OutputPathParams,
   FPGADeviceParams,
@@ -22,6 +23,8 @@ interface Props {
   dataRateMode: DataRateMode;
   edgeConfig: EdgeConfig;
   sourceSyncParams: SourceSyncParams;
+  useIndependentCaptureClock: boolean;
+  captureClock: CaptureClockParams;
   onClockChange: (c: ClockParams) => void;
   onInputPathChange: (p: InputPathParams) => void;
   onOutputPathChange: (p: OutputPathParams) => void;
@@ -30,6 +33,8 @@ interface Props {
   onDataRateModeChange: (m: DataRateMode) => void;
   onEdgeConfigChange: (e: EdgeConfig) => void;
   onSourceSyncChange: (s: SourceSyncParams) => void;
+  onUseIndependentCaptureClockChange: (v: boolean) => void;
+  onCaptureClockChange: (c: CaptureClockParams) => void;
 }
 
 function clampNumber(value: number, min: number, max: number): number {
@@ -100,6 +105,8 @@ export function ParameterPanel({
   dataRateMode,
   edgeConfig,
   sourceSyncParams,
+  useIndependentCaptureClock,
+  captureClock,
   onClockChange,
   onInputPathChange,
   onOutputPathChange,
@@ -108,6 +115,8 @@ export function ParameterPanel({
   onDataRateModeChange,
   onEdgeConfigChange,
   onSourceSyncChange,
+  onUseIndependentCaptureClockChange,
+  onCaptureClockChange,
 }: Props) {
   const updateClock = useCallback(
     (key: keyof ClockParams, val: number | string) => {
@@ -182,6 +191,22 @@ export function ParameterPanel({
           boardDelayMax: clamped,
           boardDelayMin: Math.min(inputPath.boardDelayMin, clamped),
         });
+        return;
+      }
+      if (key === 'routingDelayMin') {
+        onInputPathChange({
+          ...inputPath,
+          routingDelayMin: clamped,
+          routingDelayMax: Math.max(inputPath.routingDelayMax, clamped),
+        });
+        return;
+      }
+      if (key === 'routingDelayMax') {
+        onInputPathChange({
+          ...inputPath,
+          routingDelayMax: clamped,
+          routingDelayMin: Math.min(inputPath.routingDelayMin, clamped),
+        });
       }
     },
     [inputPath, onInputPathChange],
@@ -211,6 +236,24 @@ export function ParameterPanel({
           ...outputPath,
           boardDelayMax: clamped,
           boardDelayMin: Math.min(outputPath.boardDelayMin, clamped),
+        });
+        return;
+      }
+      if (key === 'routingDelayMin') {
+        const clamped = clampNumber(val, 0, 20);
+        onOutputPathChange({
+          ...outputPath,
+          routingDelayMin: clamped,
+          routingDelayMax: Math.max(outputPath.routingDelayMax, clamped),
+        });
+        return;
+      }
+      if (key === 'routingDelayMax') {
+        const clamped = clampNumber(val, 0, 20);
+        onOutputPathChange({
+          ...outputPath,
+          routingDelayMax: clamped,
+          routingDelayMin: Math.min(outputPath.routingDelayMin, clamped),
         });
         return;
       }
@@ -285,6 +328,23 @@ export function ParameterPanel({
     [sourceSyncParams, onSourceSyncChange],
   );
 
+  const updateCaptureClock = useCallback(
+    (key: keyof CaptureClockParams, val: number | string) => {
+      if (key === 'portName') {
+        onCaptureClockChange({ ...captureClock, portName: String(val) });
+        return;
+      }
+      if (key === 'period' && typeof val === 'number') {
+        onCaptureClockChange({ ...captureClock, period: clampNumber(val, 1, 100) });
+        return;
+      }
+      if (key === 'dutyCycle' && typeof val === 'number') {
+        onCaptureClockChange({ ...captureClock, dutyCycle: clampNumber(val, 10, 90) });
+      }
+    },
+    [captureClock, onCaptureClockChange],
+  );
+
   const isOppositeEdgeSDR =
     dataRateMode === 'sdr' && (
       (edgeConfig.launchEdge === 'rising' && edgeConfig.captureEdge === 'falling') ||
@@ -295,7 +355,9 @@ export function ParameterPanel({
   const warnings: string[] = [];
   if (inputPath.tcoSourceMin > inputPath.tcoSourceMax) warnings.push('Input: Tco min > Tco max');
   if (inputPath.boardDelayMin > inputPath.boardDelayMax) warnings.push('Input: Board Delay min > max');
+  if (inputPath.routingDelayMin > inputPath.routingDelayMax) warnings.push('Input: Routing Delay min > max');
   if (outputPath.boardDelayMin > outputPath.boardDelayMax) warnings.push('Output: Board Delay min > max');
+  if (outputPath.routingDelayMin > outputPath.routingDelayMax) warnings.push('Output: Routing Delay min > max');
   if (fpga.tcoMin > fpga.tcoMax) warnings.push('FPGA: Tco min > Tco max');
   if (topology === 'source_sync' && sourceSyncParams.fwdClockBoardDelayMin > sourceSyncParams.fwdClockBoardDelayMax)
     warnings.push('Fwd Clock: Delay min > max');
@@ -482,6 +544,53 @@ export function ParameterPanel({
         </div>
       </section>
 
+      {/* Independent capture clock toggle + fields */}
+      <section className="param-section">
+        <h3>Capture Clock</h3>
+        <div className="param-field">
+          <label className="toggle-label">
+            <input
+              type="checkbox"
+              checked={useIndependentCaptureClock}
+              onChange={(e) => onUseIndependentCaptureClockChange(e.target.checked)}
+            />
+            Independent Capture Clock
+          </label>
+        </div>
+        {useIndependentCaptureClock && (
+          <>
+            <NumField
+              label="Period"
+              value={captureClock.period}
+              min={1}
+              max={100}
+              step={0.1}
+              unit="ns"
+              description="Capture clock period (may differ from launch clock)."
+              onChange={(v) => updateCaptureClock('period', v)}
+            />
+            <NumField
+              label="Duty Cycle"
+              value={captureClock.dutyCycle}
+              min={10}
+              max={90}
+              step={1}
+              unit="%"
+              description="Capture clock duty cycle."
+              onChange={(v) => updateCaptureClock('dutyCycle', v)}
+            />
+            <div className="param-field">
+              <label>Port Name</label>
+              <input type="text" value={captureClock.portName} onChange={(e) => updateCaptureClock('portName', e.target.value)} />
+              <p className="param-description">Capture clock port name for create_clock.</p>
+            </div>
+          </>
+        )}
+        {!useIndependentCaptureClock && (
+          <p className="param-hint">Using same clock as launch. Enable to set independent capture clock.</p>
+        )}
+      </section>
+
       {/* Source sync params — only when source_sync */}
       {topology === 'source_sync' && (
         <section className="param-section source-sync-section">
@@ -557,6 +666,26 @@ export function ParameterPanel({
             description="Minimum board delay on data trace. Added to system-synchronous input_delay -min."
             onChange={(v) => updateInput('boardDelayMin', v)}
           />
+          <NumField
+            label="Routing Delay max"
+            value={inputPath.routingDelayMax}
+            min={0}
+            max={20}
+            step={0.1}
+            unit="ns"
+            description="Maximum FPGA internal routing delay from input pin to capture FF. Added to data arrival max."
+            onChange={(v) => updateInput('routingDelayMax', v)}
+          />
+          <NumField
+            label="Routing Delay min"
+            value={inputPath.routingDelayMin}
+            min={0}
+            max={20}
+            step={0.1}
+            unit="ns"
+            description="Minimum FPGA internal routing delay from input pin to capture FF. Added to data arrival min."
+            onChange={(v) => updateInput('routingDelayMin', v)}
+          />
           <div className="param-field">
             <label>Port Name</label>
             <input type="text" value={inputPath.portName} onChange={(e) => updateInput('portName', e.target.value)} />
@@ -587,6 +716,26 @@ export function ParameterPanel({
             unit="ns"
             description="Minimum board delay from FPGA output to destination device. Main term of output_delay -min."
             onChange={(v) => updateOutput('boardDelayMin', v)}
+          />
+          <NumField
+            label="Routing Delay max"
+            value={outputPath.routingDelayMax}
+            min={0}
+            max={20}
+            step={0.1}
+            unit="ns"
+            description="Maximum FPGA internal routing delay from launch FF to output pin. Added to output data arrival max."
+            onChange={(v) => updateOutput('routingDelayMax', v)}
+          />
+          <NumField
+            label="Routing Delay min"
+            value={outputPath.routingDelayMin}
+            min={0}
+            max={20}
+            step={0.1}
+            unit="ns"
+            description="Minimum FPGA internal routing delay from launch FF to output pin. Added to output data arrival min."
+            onChange={(v) => updateOutput('routingDelayMin', v)}
           />
           <NumField
             label="Dest Tsu"
