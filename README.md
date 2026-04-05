@@ -4,7 +4,7 @@ An interactive browser-based tool for visualizing and generating FPGA I/O timing
 <img width="1882" height="774" alt="image" src="https://github.com/user-attachments/assets/20f13450-6800-49fa-8657-6855fdda079d" />
 
 - Timing Diagram
-<img width="1150" height="773" alt="image" src="https://github.com/user-attachments/assets/c7208467-6341-49b5-9432-c2e1b28a458e" />
+<img width="1122" height="507" alt="image" src="https://github.com/user-attachments/assets/ea05bcb6-923e-42a1-b9e7-47f3a6dfa1ad" />
 
 
 **[Live Demo](https://MameMame777.github.io/fpga-timing-simulator/)**
@@ -73,6 +73,14 @@ src/
 ├── App.tsx                   # Root component + state management
 └── App.css                   # Dark EDA theme styles
 ```
+
+
+<img width="1138" height="250" alt="image" src="https://github.com/user-attachments/assets/58c66681-49e2-4778-a12e-68056cd4cdf1" />
+
+<img width="1116" height="245" alt="image" src="https://github.com/user-attachments/assets/9b23372a-ae9a-431f-8737-6523bad2a3f2" />
+
+you can swich simlation setting via GUI.
+<img width="318" height="802" alt="image" src="https://github.com/user-attachments/assets/25dc82c9-2c16-4256-80f7-7b42f7d121de" />
 
 ## License
 
