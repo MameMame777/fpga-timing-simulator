@@ -1,4 +1,7 @@
 # FPGA Timing Constraint Simulator
+![Version](https://img.shields.io/badge/version-0.1.0-blue) 
+![License](https://img.shields.io/badge/license-MIT-green) 
+![Vivado](https://img.shields.io/badge/Vivado-not%20tested-lightgrey)
 
 Interactive browser-based tool for visualizing FPGA I/O timing and generating Xilinx XDC (SDC-compatible) constraints.
 
