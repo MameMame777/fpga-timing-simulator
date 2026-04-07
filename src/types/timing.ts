@@ -66,6 +66,18 @@ export interface FPGADeviceParams {
   tcoMin: number; // Clock-to-output min (ns)
 }
 
+// Breakdown of how each composite timing value is derived
+export interface AnalysisBreakdown {
+  // dataArrivalMax = sum of these
+  arrivalMaxItems: { label: string; value: number }[];
+  // dataArrivalMin = sum of these
+  arrivalMinItems: { label: string; value: number }[];
+  // setupRequired terms
+  setupItems: { label: string; value: number }[];
+  // holdRequired terms
+  holdItems: { label: string; value: number }[];
+}
+
 // Analysis result for a single path
 export interface AnalysisResult {
   setupSlack: number;
@@ -78,6 +90,7 @@ export interface AnalysisResult {
   holdRequired: number;    // Hold required time from launch edge (ns)
   launchTime: number;      // Effective launch edge time within the period (ns)
   captureTime: number;     // Effective capture edge time within the period (ns)
+  breakdown: AnalysisBreakdown;
   clockSkew: number;       // Clock skew (ns) — nonzero for source sync
   totalUncertainty: number; // Jitter + uncertainty margin used in analysis (ns)
   topology: ClockTopology;

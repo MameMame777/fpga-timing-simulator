@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { AnalysisResult, ActivePath } from '../types/timing.ts';
 
 interface Props {
@@ -18,6 +19,69 @@ function SlackBadge({ label, value }: { label: string; value: number }) {
   );
 }
 
+type BreakdownItem = { label: string; value: number };
+
+function BreakdownSection({ items }: { items: BreakdownItem[] }) {
+  return (
+    <>
+      {items.map((item, i) => (
+        <div key={i} className="breakdown-row">
+          <span className="breakdown-label">{item.label}</span>
+          <span className={`breakdown-value ${item.value < 0 ? 'negative' : ''}`}>
+            {item.value >= 0 ? '+' : ''}{item.value.toFixed(3)} ns
+          </span>
+        </div>
+      ))}
+      <div className="breakdown-total">
+        <span className="breakdown-label">= Total</span>
+        <span className="breakdown-value">
+          {items.reduce((s, it) => s + it.value, 0).toFixed(3)} ns
+        </span>
+      </div>
+    </>
+  );
+}
+
+function HoverRow({
+  label,
+  display,
+  items,
+  minItems,
+  maxItems,
+}: {
+  label: string;
+  display: string;
+  items?: BreakdownItem[];
+  minItems?: BreakdownItem[];
+  maxItems?: BreakdownItem[];
+}) {
+  const [open, setOpen] = useState(false);
+  const hasBreakdown = items || (minItems && maxItems);
+  return (
+    <div
+      className="timing-row"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <span>{label} <span className="timing-value">{display}</span></span>
+      {hasBreakdown && <span className="breakdown-hint">▸</span>}
+      {open && hasBreakdown && (
+        <div className="breakdown-tooltip">
+          {items && <BreakdownSection items={items} />}
+          {minItems && maxItems && (
+            <>
+              <div className="breakdown-section-header">min path</div>
+              <BreakdownSection items={minItems} />
+              <div className="breakdown-section-header" style={{ marginTop: 6 }}>max path</div>
+              <BreakdownSection items={maxItems} />
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PathResult({
   title,
   result,
@@ -28,15 +92,29 @@ function PathResult({
   active: boolean;
 }) {
   const hasViolation = result.isSetupViolation || result.isHoldViolation;
+  const { breakdown } = result;
   return (
     <div className={`path-result ${active ? 'active' : ''} ${hasViolation ? 'has-violation' : ''}`}>
       <h4>{title}</h4>
       <SlackBadge label="Setup Slack" value={result.setupSlack} />
       <SlackBadge label="Hold Slack" value={result.holdSlack} />
       <div className="timing-detail">
-        <div>Data Arrival: {result.dataArrivalMin.toFixed(3)} ~ {result.dataArrivalMax.toFixed(3)} ns</div>
-        <div>Setup Required: &lt; {result.setupRequired.toFixed(3)} ns</div>
-        <div>Hold Required: &gt; {result.holdRequired.toFixed(3)} ns</div>
+        <HoverRow
+          label="Data Arrival:"
+          display={`${result.dataArrivalMin.toFixed(3)} ~ ${result.dataArrivalMax.toFixed(3)} ns`}
+          minItems={breakdown.arrivalMinItems}
+          maxItems={breakdown.arrivalMaxItems}
+        />
+        <HoverRow
+          label="Setup Required: <"
+          display={`${result.setupRequired.toFixed(3)} ns`}
+          items={breakdown.setupItems}
+        />
+        <HoverRow
+          label="Hold Required: >"
+          display={`${result.holdRequired.toFixed(3)} ns`}
+          items={breakdown.holdItems}
+        />
         <div>Clock Skew: {result.clockSkew.toFixed(3)} ns</div>
         <div>Total Uncertainty: {result.totalUncertainty.toFixed(3)} ns</div>
       </div>

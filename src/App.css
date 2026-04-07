@@ -232,6 +232,7 @@ body {
 .path-diagram-svg {
   width: 100%;
   height: auto;
+  overflow: visible;
 }
 
 .visualization.diagram-mode .timing-diagram-svg {
@@ -335,6 +336,86 @@ body {
   padding: 4px 0;
   line-height: 1.6;
   font-family: monospace;
+}
+
+.timing-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: default;
+  border-radius: 3px;
+  padding: 1px 3px;
+  transition: background 0.1s;
+}
+
+.timing-row:hover {
+  background: rgba(79, 195, 247, 0.07);
+  color: var(--text-primary);
+}
+
+.timing-value {
+  color: var(--accent-blue);
+}
+
+.breakdown-hint {
+  font-size: 8px;
+  color: var(--text-secondary);
+  opacity: 0.5;
+}
+
+.breakdown-tooltip {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  background: #1a1a30;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 8px 10px;
+  min-width: 220px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  pointer-events: none;
+}
+
+.breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  font-family: monospace;
+  line-height: 1.7;
+}
+
+.breakdown-total {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 10px;
+  color: var(--accent-blue);
+  font-family: monospace;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 4px;
+  font-weight: bold;
+}
+
+.breakdown-value {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.breakdown-value.negative {
+  color: var(--accent-red);
+}
+
+.breakdown-section-header {
+  font-size: 9px;
+  color: var(--accent-blue);
+  font-family: monospace;
+  margin-bottom: 2px;
+  letter-spacing: 0.03em;
 }
 
 .warning-msg {

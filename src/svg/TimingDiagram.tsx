@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { ClockParams, CaptureClockParams, AnalysisResult } from '../types/timing.ts';
 
 interface Props {
@@ -98,7 +99,7 @@ export function TimingDiagram({ clock, result, isInputPath, captureClock }: Prop
   const topoLabel = result.topology === 'source_sync' ? 'Source Synchronous' : 'System Synchronous';
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="timing-diagram-svg">
+    <svg viewBox={`0 0 ${W} ${H}`} className="timing-diagram-svg" overflow="visible">
       <rect x={0} y={0} width={W} height={H} fill="#1a1a2e" />
 
       {/* Grid */}
@@ -173,39 +174,31 @@ export function TimingDiagram({ clock, result, isInputPath, captureClock }: Prop
       {/* Hold window shading */}
       <rect x={launchX} y={dataY - 5} width={holdReqX - launchX} height={dataH + 10}
         fill="rgba(66,165,245,0.2)" />
-      {/* Data arrival range */}
-      <rect x={arrMinX} y={dataY} width={arrMaxX - arrMinX} height={dataH}
-        fill="rgba(255,183,77,0.25)" />
-
-      {/* Data waveform */}
-      <polyline
-        points={`${dataStartX},${dataY + dataH} ${arrMinX},${dataY + dataH} ${arrMaxX},${dataY} ${dataEndX},${dataY}`}
-        fill="none" stroke={hasSetupV || hasHoldV ? '#ef5350' : '#66bb6a'} strokeWidth={2}
+      {/* Data arrival range + waveform (hover for breakdown) */}
+      <DataArrivalRegion
+        dataStartX={dataStartX} dataEndX={dataEndX}
+        arrMinX={arrMinX} arrMaxX={arrMaxX}
+        dataY={dataY} dataH={dataH}
+        hasViolation={hasSetupV || hasHoldV}
+        minItems={result.breakdown.arrivalMinItems}
+        maxItems={result.breakdown.arrivalMaxItems}
       />
-      <polyline
-        points={`${dataStartX},${dataY} ${arrMinX},${dataY} ${arrMaxX},${dataY + dataH} ${dataEndX},${dataY + dataH}`}
-        fill="none" stroke={hasSetupV || hasHoldV ? '#ef5350' : '#66bb6a'} strokeWidth={2}
-      />
-      <text x={(dataStartX + arrMinX) / 2} y={dataY + dataH / 2 + 3} fill="#6a6a8a"
-        fontSize={9} textAnchor="middle" fontFamily="monospace">OLD</text>
-      <text x={(arrMaxX + dataEndX) / 2} y={dataY + dataH / 2 + 3} fill="#6a6a8a"
-        fontSize={9} textAnchor="middle" fontFamily="monospace">NEW</text>
 
       {/* Setup required line */}
-      <line x1={setupReqX} y1={dataY - 8} x2={setupReqX} y2={dataY + dataH + 8}
-        stroke="#ff9800" strokeWidth={1.5} strokeDasharray="4,3" />
-      <text x={setupReqX} y={dataY - 12} fill="#ff9800" fontSize={9}
-        textAnchor="middle" fontFamily="monospace">
-        setup req {result.setupRequired.toFixed(1)}ns
-      </text>
+      <AnnotatedLine
+        x={setupReqX} y1={dataY - 8} y2={dataY + dataH + 8}
+        labelY={dataY - 12} label={`setup req ${result.setupRequired.toFixed(1)}ns`}
+        color="#ff9800" items={result.breakdown.setupItems}
+        tooltipAnchor="middle"
+      />
 
       {/* Hold required line */}
-      <line x1={holdReqX} y1={dataY - 8} x2={holdReqX} y2={dataY + dataH + 8}
-        stroke="#42a5f5" strokeWidth={1.5} strokeDasharray="4,3" />
-      <text x={holdReqX} y={dataY - 12} fill="#42a5f5" fontSize={9}
-        textAnchor="middle" fontFamily="monospace">
-        hold req {result.holdRequired.toFixed(1)}ns
-      </text>
+      <AnnotatedLine
+        x={holdReqX} y1={dataY - 8} y2={dataY + dataH + 8}
+        labelY={dataY - 12} label={`hold req ${result.holdRequired.toFixed(1)}ns`}
+        color="#42a5f5" items={result.breakdown.holdItems}
+        tooltipAnchor="middle"
+      />
 
       {/* Clock skew annotation (source sync) */}
       {result.clockSkew !== 0 && (
@@ -218,19 +211,30 @@ export function TimingDiagram({ clock, result, isInputPath, captureClock }: Prop
       {/* Annotation arrows */}
       <DimensionArrow x1={arrMaxX} x2={setupReqX} y={annY}
         label={`Setup Slack: ${result.setupSlack.toFixed(2)} ns`}
-        color={hasSetupV ? '#ef5350' : '#66bb6a'} />
+        color={hasSetupV ? '#ef5350' : '#66bb6a'}
+        items={[
+          { label: 'Setup Required', value: result.setupRequired },
+          { label: '− Arrival (max)', value: -result.dataArrivalMax },
+        ]} />
       <DimensionArrow x1={holdReqX} x2={arrMinX} y={annY + 24}
         label={`Hold Slack: ${result.holdSlack.toFixed(2)} ns`}
-        color={hasHoldV ? '#ef5350' : '#66bb6a'} />
+        color={hasHoldV ? '#ef5350' : '#66bb6a'}
+        items={[
+          { label: 'Arrival (min)', value: result.dataArrivalMin },
+          { label: '− Hold Required', value: -result.holdRequired },
+        ]} />
       <DimensionArrow x1={launchX} x2={setupReqX} y={annY + 48}
         label={`Required(setup): ${result.setupRequired.toFixed(2)} ns`}
-        color="#ff9800" />
+        color="#ff9800"
+        items={result.breakdown.setupItems} />
       <DimensionArrow x1={launchX} x2={holdReqX} y={annY + 66}
         label={`Required(hold): ${result.holdRequired.toFixed(2)} ns`}
-        color="#42a5f5" />
+        color="#42a5f5"
+        items={result.breakdown.holdItems} />
       <DimensionArrow x1={launchX} x2={arrMaxX} y={annY + 90}
         label={`Data Arrival(max): ${result.dataArrivalMax.toFixed(2)} ns`}
-        color="#ffa726" />
+        color="#ffa726"
+        items={result.breakdown.arrivalMaxItems} />
 
       {/* Edge window annotation */}
       <DimensionArrow x1={launchX} x2={captureX} y={annY + 108}
@@ -312,16 +316,174 @@ function buildClockPoints(
   return pts.join(' ');
 }
 
+// ---------- AnnotatedLine ----------
+// Vertical dashed line with label; hover shows breakdown tooltip.
+function AnnotatedLine({
+  x, y1, y2, labelY, label, color, items, tooltipAnchor,
+}: {
+  x: number; y1: number; y2: number; labelY: number; label: string;
+  color: string; items: { label: string; value: number }[];
+  tooltipAnchor?: 'start' | 'middle' | 'end';
+}) {
+  const [hovered, setHovered] = useState(false);
+  const tooltipW = 270;
+  const rowH = 17;
+  const tooltipH = items.length * rowH + 42;
+  const ttX = Math.max(10, Math.min(x - tooltipW / 2, W - tooltipW - 10));
+  const ttY = labelY - tooltipH - 4;
+
+  return (
+    <g
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{ cursor: 'help' }}
+    >
+      {/* wider invisible hit area */}
+      <rect x={x - 10} y={y1} width={20} height={y2 - y1} fill="transparent" />
+      <line x1={x} y1={y1} x2={x} y2={y2} stroke={color} strokeWidth={1.5} strokeDasharray="4,3" />
+      <text x={x} y={labelY} fill={color} fontSize={9} textAnchor={tooltipAnchor ?? 'middle'} fontFamily="monospace">
+        {label}
+      </text>
+      {hovered && (
+        <g>
+          <rect x={ttX} y={ttY} width={tooltipW} height={tooltipH}
+            fill="#12122a" stroke="#3a3a5a" strokeWidth={1} rx={4} ry={4} />
+          {items.map((item, i) => (
+            <g key={i}>
+              <text x={ttX + 8} y={ttY + 15 + i * rowH}
+                fill={item.value < 0 ? '#ef5350' : '#aaaacc'}
+                fontSize={10} fontFamily="monospace">{item.label}</text>
+              <text x={ttX + tooltipW - 8} y={ttY + 15 + i * rowH}
+                fill={item.value < 0 ? '#ef5350' : '#aaaacc'}
+                fontSize={10} fontFamily="monospace" textAnchor="end">
+                {item.value >= 0 ? '+' : ''}{item.value.toFixed(3)} ns
+              </text>
+            </g>
+          ))}
+          <line x1={ttX + 4} y1={ttY + 15 + items.length * rowH - 2}
+            x2={ttX + tooltipW - 4} y2={ttY + 15 + items.length * rowH - 2}
+            stroke="#3a3a5a" strokeWidth={1} />
+          <text x={ttX + 8} y={ttY + 15 + items.length * rowH + rowH - 1}
+            fill={color} fontSize={10} fontFamily="monospace" fontWeight="bold">= Total</text>
+          <text x={ttX + tooltipW - 8} y={ttY + 15 + items.length * rowH + rowH - 1}
+            fill={color} fontSize={10} fontFamily="monospace" textAnchor="end" fontWeight="bold">
+            {items.reduce((s, it) => s + it.value, 0).toFixed(3)} ns
+          </text>
+        </g>
+      )}
+    </g>
+  );
+}
+
+// ---------- DataArrivalRegion ----------
+// Data waveform + crossing/shaded region; hover shows min/max breakdown.
+function DataArrivalRegion({
+  dataStartX, dataEndX, arrMinX, arrMaxX, dataY, dataH, hasViolation,
+  minItems, maxItems,
+}: {
+  dataStartX: number; dataEndX: number;
+  arrMinX: number; arrMaxX: number;
+  dataY: number; dataH: number; hasViolation: boolean;
+  minItems: { label: string; value: number }[];
+  maxItems: { label: string; value: number }[];
+}) {
+  const [hovered, setHovered] = useState(false);
+  const stroke = hasViolation ? '#ef5350' : '#66bb6a';
+
+  const tooltipW = 270;
+  const sectionH = minItems.length * 17 + 42;
+  const tooltipH = sectionH * 2 + 24; // two sections + gap
+  const midX = (arrMinX + arrMaxX) / 2;
+  const ttX = Math.max(10, Math.min(midX - tooltipW / 2, W - tooltipW - 10));
+  const ttY = dataY - tooltipH - 10;
+
+  function Section({ items, color, title, offsetY }: {
+    items: { label: string; value: number }[]; color: string; title: string; offsetY: number;
+  }) {
+    const rowH = 17;
+    return (
+      <g>
+        <text x={ttX + 8} y={ttY + offsetY + 10} fill={color} fontSize={9} fontFamily="monospace" fontWeight="bold">
+          {title}
+        </text>
+        {items.map((item, i) => (
+          <g key={i}>
+            <text x={ttX + 8} y={ttY + offsetY + 24 + i * rowH}
+              fill="#aaaacc" fontSize={10} fontFamily="monospace">{item.label}</text>
+            <text x={ttX + tooltipW - 8} y={ttY + offsetY + 24 + i * rowH}
+              fill="#aaaacc" fontSize={10} fontFamily="monospace" textAnchor="end">
+              +{item.value.toFixed(3)} ns
+            </text>
+          </g>
+        ))}
+        <line x1={ttX + 4} y1={ttY + offsetY + 24 + items.length * rowH - 2}
+          x2={ttX + tooltipW - 4} y2={ttY + offsetY + 24 + items.length * rowH - 2}
+          stroke="#3a3a5a" strokeWidth={1} />
+        <text x={ttX + 8} y={ttY + offsetY + 24 + items.length * rowH + rowH - 1}
+          fill={color} fontSize={10} fontFamily="monospace" fontWeight="bold">= Total</text>
+        <text x={ttX + tooltipW - 8} y={ttY + offsetY + 24 + items.length * rowH + rowH - 1}
+          fill={color} fontSize={10} fontFamily="monospace" textAnchor="end" fontWeight="bold">
+          {items.reduce((s, it) => s + it.value, 0).toFixed(3)} ns
+        </text>
+      </g>
+    );
+  }
+
+  return (
+    <g
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{ cursor: 'help' }}
+    >
+      <rect x={arrMinX} y={dataY} width={Math.max(arrMaxX - arrMinX, 4)} height={dataH}
+        fill={hovered ? 'rgba(255,183,77,0.45)' : 'rgba(255,183,77,0.25)'} />
+      <polyline
+        points={`${dataStartX},${dataY + dataH} ${arrMinX},${dataY + dataH} ${arrMaxX},${dataY} ${dataEndX},${dataY}`}
+        fill="none" stroke={stroke} strokeWidth={2} />
+      <polyline
+        points={`${dataStartX},${dataY} ${arrMinX},${dataY} ${arrMaxX},${dataY + dataH} ${dataEndX},${dataY + dataH}`}
+        fill="none" stroke={stroke} strokeWidth={2} />
+      <text x={(dataStartX + arrMinX) / 2} y={dataY + dataH / 2 + 3} fill="#6a6a8a"
+        fontSize={9} textAnchor="middle" fontFamily="monospace">OLD</text>
+      <text x={(arrMaxX + dataEndX) / 2} y={dataY + dataH / 2 + 3} fill="#6a6a8a"
+        fontSize={9} textAnchor="middle" fontFamily="monospace">NEW</text>
+      {hovered && (
+        <g>
+          <rect x={ttX} y={ttY} width={tooltipW} height={tooltipH}
+            fill="#12122a" stroke="#3a3a5a" strokeWidth={1} rx={4} ry={4} />
+          <Section items={minItems} color="#ffa726" title="Arrival min" offsetY={8} />
+          <Section items={maxItems} color="#ff9800" title="Arrival max" offsetY={sectionH + 18} />
+        </g>
+      )}
+    </g>
+  );
+}
+
 function DimensionArrow({
-  x1, x2, y, label, color,
+  x1, x2, y, label, color, items,
 }: {
   x1: number; x2: number; y: number; label: string; color: string;
+  items?: { label: string; value: number }[];
 }) {
+  const [hovered, setHovered] = useState(false);
   const left = Math.min(x1, x2);
   const right = Math.max(x1, x2);
   const mid = (left + right) / 2;
+
+  const tooltipW = 270;
+  const rowH = 17;
+  const tooltipH = items ? items.length * rowH + 42 : 0;
+  const ttX = Math.min(Math.max(left, mid - tooltipW / 2), W - tooltipW - 10);
+  const ttY = y - tooltipH - 10;
+
   return (
-    <g>
+    <g
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{ cursor: items ? 'help' : 'default' }}
+    >
+      {/* Wider invisible hit area for easier hovering */}
+      <rect x={left} y={y - 10} width={Math.max(right - left, 20)} height={20} fill="transparent" />
       <line x1={left} y1={y} x2={right} y2={y} stroke={color} strokeWidth={1.5} />
       <polygon points={`${left},${y} ${left + 5},${y - 3} ${left + 5},${y + 3}`} fill={color} />
       <polygon points={`${right},${y} ${right - 5},${y - 3} ${right - 5},${y + 3}`} fill={color} />
@@ -330,6 +492,39 @@ function DimensionArrow({
       <text x={mid} y={y - 5} fill={color} fontSize={9} textAnchor="middle" fontFamily="monospace">
         {label}
       </text>
+      {hovered && items && (
+        <g>
+          <rect x={ttX} y={ttY} width={tooltipW} height={tooltipH}
+            fill="#12122a" stroke="#3a3a5a" strokeWidth={1} rx={4} ry={4} />
+          {items.map((item, i) => (
+            <g key={i}>
+              <text x={ttX + 8} y={ttY + 15 + i * rowH}
+                fill={item.value < 0 ? '#ef5350' : '#aaaacc'}
+                fontSize={10} fontFamily="monospace">
+                {item.label}
+              </text>
+              <text x={ttX + tooltipW - 8} y={ttY + 15 + i * rowH}
+                fill={item.value < 0 ? '#ef5350' : '#aaaacc'}
+                fontSize={10} fontFamily="monospace" textAnchor="end">
+                {item.value >= 0 ? '+' : ''}{item.value.toFixed(3)} ns
+              </text>
+            </g>
+          ))}
+          <line
+            x1={ttX + 4} y1={ttY + 15 + items.length * rowH - 2}
+            x2={ttX + tooltipW - 4} y2={ttY + 15 + items.length * rowH - 2}
+            stroke="#3a3a5a" strokeWidth={1}
+          />
+          <text x={ttX + 8} y={ttY + 15 + items.length * rowH + rowH - 1}
+            fill={color} fontSize={10} fontFamily="monospace" fontWeight="bold">
+            = Total
+          </text>
+          <text x={ttX + tooltipW - 8} y={ttY + 15 + items.length * rowH + rowH - 1}
+            fill={color} fontSize={10} fontFamily="monospace" textAnchor="end" fontWeight="bold">
+            {items.reduce((s, it) => s + it.value, 0).toFixed(3)} ns
+          </text>
+        </g>
+      )}
     </g>
   );
 }

@@ -5,6 +5,7 @@ import type {
   OutputPathParams,
   FPGADeviceParams,
   AnalysisResult,
+  AnalysisBreakdown,
   AnimationKeyframe,
   ClockTopology,
   EdgeConfig,
@@ -107,27 +108,69 @@ export function analyzeInputPath(
   let baseClockSkew = 0;
   let setupRequired: number;
   let holdRequired: number;
+  let breakdown: AnalysisBreakdown;
 
   if (topology === 'source_sync' && sourceSync) {
-    // Source sync: the capture clock (forwarded) has its own board delay.
-    // Clock skew from the FPGA's perspective:
-    //   skewMax = fwdClkDelayMax − (dataBoardDelayMin + dataRoutingDelayMin)
-    //   skewMin = fwdClkDelayMin − (dataBoardDelayMax + dataRoutingDelayMax)
-    // But we fold the skew into setup/hold required calculations.
     const clockArrivalMax = sourceSync.fwdClockBoardDelayMax;
     const clockArrivalMin = sourceSync.fwdClockBoardDelayMin;
     baseClockSkew = (clockArrivalMax + clockArrivalMin) / 2
       - (input.boardDelayMax + input.boardDelayMin + input.routingDelayMax + input.routingDelayMin) / 2;
 
-    // Setup: data must settle before capture edge + clock arrival - tsu
-    // Required time = effectiveWindow + clockArrivalMin - tsu  (from launch perspective)
     setupRequired = effectiveWindow + clockArrivalMin + clock.skew - fpga.tsu - totalUncertainty;
-    // Hold: data must not change until after capture edge + clock arrival + th
     holdRequired = clockArrivalMax + clock.skew + fpga.th + totalUncertainty;
+
+    breakdown = {
+      arrivalMaxItems: [
+        { label: 'tco Source (max)', value: input.tcoSourceMax },
+        { label: 'Board Delay (max)', value: input.boardDelayMax },
+        { label: 'Routing Delay (max)', value: input.routingDelayMax },
+      ],
+      arrivalMinItems: [
+        { label: 'tco Source (min)', value: input.tcoSourceMin },
+        { label: 'Board Delay (min)', value: input.boardDelayMin },
+        { label: 'Routing Delay (min)', value: input.routingDelayMin },
+      ],
+      setupItems: [
+        { label: 'Effective Window', value: effectiveWindow },
+        { label: 'Fwd Clk Delay (min)', value: clockArrivalMin },
+        { label: 'Clock Skew', value: clock.skew },
+        { label: '− tsu (FPGA)', value: -fpga.tsu },
+        { label: '− Uncertainty', value: -totalUncertainty },
+      ],
+      holdItems: [
+        { label: 'Fwd Clk Delay (max)', value: clockArrivalMax },
+        { label: 'Clock Skew', value: clock.skew },
+        { label: 'th (FPGA)', value: fpga.th },
+        { label: 'Uncertainty', value: totalUncertainty },
+      ],
+    };
   } else {
-    // System synchronous: common clock with nominal skew baseline
     setupRequired = effectiveWindow + clock.skew - fpga.tsu - totalUncertainty;
     holdRequired = clock.skew + fpga.th + totalUncertainty;
+
+    breakdown = {
+      arrivalMaxItems: [
+        { label: 'tco Source (max)', value: input.tcoSourceMax },
+        { label: 'Board Delay (max)', value: input.boardDelayMax },
+        { label: 'Routing Delay (max)', value: input.routingDelayMax },
+      ],
+      arrivalMinItems: [
+        { label: 'tco Source (min)', value: input.tcoSourceMin },
+        { label: 'Board Delay (min)', value: input.boardDelayMin },
+        { label: 'Routing Delay (min)', value: input.routingDelayMin },
+      ],
+      setupItems: [
+        { label: 'Effective Window', value: effectiveWindow },
+        { label: 'Clock Skew', value: clock.skew },
+        { label: '− tsu (FPGA)', value: -fpga.tsu },
+        { label: '− Uncertainty', value: -totalUncertainty },
+      ],
+      holdItems: [
+        { label: 'Clock Skew', value: clock.skew },
+        { label: 'th (FPGA)', value: fpga.th },
+        { label: 'Uncertainty', value: totalUncertainty },
+      ],
+    };
   }
 
   const clockSkew = baseClockSkew + clock.skew;
@@ -150,6 +193,7 @@ export function analyzeInputPath(
     totalUncertainty,
     topology,
     edgeConfig,
+    breakdown,
   };
 }
 
@@ -175,6 +219,7 @@ export function analyzeOutputPath(
   let baseClockSkew = 0;
   let setupRequired: number;
   let holdRequired: number;
+  let breakdown: AnalysisBreakdown;
 
   if (topology === 'source_sync' && sourceSync) {
     const clockArrivalMax = sourceSync.fwdClockBoardDelayMax;
@@ -184,9 +229,59 @@ export function analyzeOutputPath(
 
     setupRequired = effectiveWindow + clockArrivalMin + clock.skew - output.tsuDest - totalUncertainty;
     holdRequired = clockArrivalMax + clock.skew + output.thDest + totalUncertainty;
+
+    breakdown = {
+      arrivalMaxItems: [
+        { label: 'tco FPGA (max)', value: fpga.tcoMax },
+        { label: 'Board Delay (max)', value: output.boardDelayMax },
+        { label: 'Routing Delay (max)', value: output.routingDelayMax },
+      ],
+      arrivalMinItems: [
+        { label: 'tco FPGA (min)', value: fpga.tcoMin },
+        { label: 'Board Delay (min)', value: output.boardDelayMin },
+        { label: 'Routing Delay (min)', value: output.routingDelayMin },
+      ],
+      setupItems: [
+        { label: 'Effective Window', value: effectiveWindow },
+        { label: 'Fwd Clk Delay (min)', value: clockArrivalMin },
+        { label: 'Clock Skew', value: clock.skew },
+        { label: '− tsu Dest', value: -output.tsuDest },
+        { label: '− Uncertainty', value: -totalUncertainty },
+      ],
+      holdItems: [
+        { label: 'Fwd Clk Delay (max)', value: clockArrivalMax },
+        { label: 'Clock Skew', value: clock.skew },
+        { label: 'th Dest', value: output.thDest },
+        { label: 'Uncertainty', value: totalUncertainty },
+      ],
+    };
   } else {
     setupRequired = effectiveWindow + clock.skew - output.tsuDest - totalUncertainty;
     holdRequired = clock.skew + output.thDest + totalUncertainty;
+
+    breakdown = {
+      arrivalMaxItems: [
+        { label: 'tco FPGA (max)', value: fpga.tcoMax },
+        { label: 'Board Delay (max)', value: output.boardDelayMax },
+        { label: 'Routing Delay (max)', value: output.routingDelayMax },
+      ],
+      arrivalMinItems: [
+        { label: 'tco FPGA (min)', value: fpga.tcoMin },
+        { label: 'Board Delay (min)', value: output.boardDelayMin },
+        { label: 'Routing Delay (min)', value: output.routingDelayMin },
+      ],
+      setupItems: [
+        { label: 'Effective Window', value: effectiveWindow },
+        { label: 'Clock Skew', value: clock.skew },
+        { label: '− tsu Dest', value: -output.tsuDest },
+        { label: '− Uncertainty', value: -totalUncertainty },
+      ],
+      holdItems: [
+        { label: 'Clock Skew', value: clock.skew },
+        { label: 'th Dest', value: output.thDest },
+        { label: 'Uncertainty', value: totalUncertainty },
+      ],
+    };
   }
 
   const clockSkew = baseClockSkew + clock.skew;
@@ -209,6 +304,7 @@ export function analyzeOutputPath(
     totalUncertainty,
     topology,
     edgeConfig,
+    breakdown,
   };
 }
 
