@@ -5,8 +5,6 @@
 
 Interactive browser-based tool for visualizing FPGA I/O timing and generating Xilinx XDC (SDC-compatible) constraints.
 
-<img width="1882" height="774" alt="main-ui" src="https://github.com/user-attachments/assets/20f13450-6800-49fa-8657-6855fdda079d" />
-
 Timing diagram view:
 
 <img width="1122" height="507" alt="timing-diagram" src="https://github.com/user-attachments/assets/ea05bcb6-923e-42a1-b9e7-47f3a6dfa1ad" />
