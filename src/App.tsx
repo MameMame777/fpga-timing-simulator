@@ -6,7 +6,6 @@ import type {
   OutputPathParams,
   FPGADeviceParams,
   ActivePath,
-  ViewMode,
   ClockTopology,
   DataRateMode,
   EdgeConfig,
@@ -17,7 +16,6 @@ import { generateXDC } from './utils/xdc-generator.ts';
 import { ParameterPanel } from './components/ParameterPanel.tsx';
 import { ResultPanel } from './components/ResultPanel.tsx';
 import { ConstraintOutput } from './components/ConstraintOutput.tsx';
-import { WaveformView } from './components/WaveformView.tsx';
 import { TimingDiagram } from './svg/TimingDiagram.tsx';
 import { PathDiagram } from './svg/PathDiagram.tsx';
 import './App.css';
@@ -79,7 +77,6 @@ export default function App() {
   const [outputPath, setOutputPath] = useState<OutputPathParams>(DEFAULT_OUTPUT);
   const [fpga, setFPGA] = useState<FPGADeviceParams>(DEFAULT_FPGA);
   const [activePath, setActivePath] = useState<ActivePath>('input');
-  const [viewMode, setViewMode] = useState<ViewMode>('waveform');
   const [topology, setTopology] = useState<ClockTopology>('system_sync');
   const [dataRateMode, setDataRateMode] = useState<DataRateMode>('sdr');
   const [edgeConfig, setEdgeConfig] = useState<EdgeConfig>({ launchEdge: 'rising', captureEdge: 'rising' });
@@ -167,7 +164,7 @@ export default function App() {
 
         {/* Center: Visualization */}
         <main className="panel-center">
-          {/* Path selector + View toggle */}
+          {/* Path selector */}
           <div className="view-controls">
             <div className="path-selector">
               <button
@@ -183,20 +180,6 @@ export default function App() {
                 Output Path
               </button>
             </div>
-            <div className="view-toggle">
-              <button
-                className={viewMode === 'waveform' ? 'active' : ''}
-                onClick={() => setViewMode('waveform')}
-              >
-                Waveform Animation
-              </button>
-              <button
-                className={viewMode === 'diagram' ? 'active' : ''}
-                onClick={() => setViewMode('diagram')}
-              >
-                Timing Diagram
-              </button>
-            </div>
           </div>
 
           {/* Path block diagram */}
@@ -205,24 +188,13 @@ export default function App() {
           </div>
 
           {/* Main visualization */}
-          <div className={`visualization ${viewMode === 'diagram' ? 'diagram-mode' : ''}`}>
-            {viewMode === 'waveform' ? (
-              <WaveformView
-                clock={clock}
-                result={activeResult}
-                isInputPath={isInputPath}
-                topology={topology}
-                sourceSyncParams={sourceSyncParams}
-                captureClock={effectiveCaptureClock}
-              />
-            ) : (
-              <TimingDiagram
-                clock={clock}
-                result={activeResult}
-                isInputPath={isInputPath}
-                captureClock={effectiveCaptureClock}
-              />
-            )}
+          <div className="visualization diagram-mode">
+            <TimingDiagram
+              clock={clock}
+              result={activeResult}
+              isInputPath={isInputPath}
+              captureClock={effectiveCaptureClock}
+            />
           </div>
         </main>
 

@@ -112,9 +112,6 @@ export interface AnimationState {
 // Which path is currently selected for display
 export type ActivePath = 'input' | 'output';
 
-// View mode
-export type ViewMode = 'waveform' | 'diagram';
-
 // Complete app state
 export interface TimingState {
   clock: ClockParams;
@@ -130,5 +127,4 @@ export interface TimingState {
   inputResult: AnalysisResult;
   outputResult: AnalysisResult;
   activePath: ActivePath;
-  viewMode: ViewMode;
 }

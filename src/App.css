@@ -180,14 +180,12 @@ body {
   gap: 8px;
 }
 
-.path-selector,
-.view-toggle {
+.path-selector {
   display: flex;
   gap: 0;
 }
 
-.path-selector button,
-.view-toggle button {
+.path-selector button {
   padding: 6px 14px;
   font-size: 11px;
   font-family: monospace;
@@ -199,13 +197,11 @@ body {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
-.path-selector button:first-child,
-.view-toggle button:first-child {
+.path-selector button:first-child {
   border-radius: 4px 0 0 4px;
 }
 
-.path-selector button:last-child,
-.view-toggle button:last-child {
+.path-selector button:last-child {
   border-radius: 0 4px 4px 0;
 }
 
@@ -213,12 +209,6 @@ body {
   background: var(--accent-blue);
   color: #000;
   border-color: var(--accent-blue);
-}
-
-.view-toggle button.active {
-  background: var(--accent-orange);
-  color: #000;
-  border-color: var(--accent-orange);
 }
 
 /* ---- Visualization ---- */
@@ -235,62 +225,6 @@ body {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
-}
-
-.waveform-view {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
-.waveform-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: rgba(0, 0, 0, 0.3);
-  border-bottom: 1px solid var(--border);
-}
-
-.waveform-controls button {
-  padding: 4px 10px;
-  font-size: 11px;
-  font-family: monospace;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--text-primary);
-  cursor: pointer;
-}
-
-.waveform-controls button:hover {
-  background: var(--accent-blue);
-  color: #000;
-}
-
-.speed-control {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10px;
-  color: var(--text-secondary);
-  margin-left: auto;
-}
-
-.speed-control input[type="range"] {
-  width: 80px;
-  accent-color: var(--accent-blue);
-}
-
-.speed-control span {
-  min-width: 30px;
-  text-align: right;
-  font-family: monospace;
-}
-
-.waveform-canvas {
-  width: 100%;
-  display: block;
 }
 
 /* ---- SVG Diagrams ---- */
