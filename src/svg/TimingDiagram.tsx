@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import type { ClockParams, CaptureClockParams, AnalysisResult } from '../types/timing.ts';
 
 interface Props {
@@ -98,8 +98,47 @@ export function TimingDiagram({ clock, result, isInputPath, captureClock }: Prop
   // Topology label
   const topoLabel = result.topology === 'source_sync' ? 'Source Synchronous' : 'System Synchronous';
 
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  const handleDownloadPng = useCallback(() => {
+    const svgEl = svgRef.current;
+    if (!svgEl) return;
+    const scale = 2;
+    const svgData = new XMLSerializer().serializeToString(svgEl);
+    const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = W * scale;
+      canvas.height = H * scale;
+      const ctx = canvas.getContext('2d')!;
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0, W, H);
+      URL.revokeObjectURL(url);
+      const a = document.createElement('a');
+      a.download = 'timing-diagram.png';
+      a.href = canvas.toDataURL('image/png');
+      a.click();
+    };
+    img.src = url;
+  }, [W, H]);
+
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="timing-diagram-svg" overflow="visible">
+    <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
+      <button
+        onClick={handleDownloadPng}
+        style={{
+          position: 'absolute', top: 8, left: 8, zIndex: 10,
+          padding: '4px 10px', fontSize: 11, cursor: 'pointer',
+          background: '#2a2a4a', color: '#c8c8e0', border: '1px solid #4a4a6a',
+          borderRadius: 4, fontFamily: 'monospace',
+        }}
+        title="Download as PNG"
+      >
+        &#x1F4BE; PNG
+      </button>
+    <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="timing-diagram-svg" overflow="visible">
       <rect x={0} y={0} width={W} height={H} fill="#1a1a2e" />
 
       {/* Grid */}
@@ -263,6 +302,7 @@ export function TimingDiagram({ clock, result, isInputPath, captureClock }: Prop
         </text>
       )}
     </svg>
+    </div>
   );
 }
 
